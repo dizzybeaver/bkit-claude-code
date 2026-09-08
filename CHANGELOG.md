@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.39] - 2026-09-07 (unreleased — version heading provisional; the maintainer assigns the release number)
+
+### Fixed — the PDCA registry never advanced on a skill fire
+
+Field evidence (`work/pdca-skill-fire-test-results.md`): three real `/pdca` fires were
+detected by the hook layer (registry timestamp advanced, guidance emitted) while the
+feature was never registered and no phase changed. Root cause:
+`runSkillInvocationEffects` gated the phase write on the skill's *static* frontmatter
+`pdca-phase`, which the `pdca` router declares `null` by design — the effective phase
+arrives as the invocation's action token, which #135 wired into guidance but never into
+the write path. Router fires now resolve the phase from the action (direct names plus
+`analyze→check`, `iterate→act` aliases, reusing the `PDCA_ACTION_PHASES` SSoT) and pass
+`requireDocs:false` — a new feature's documents are the phase's *output* and cannot
+exist at fire time. Read-like actions (`status`, `next`) still write nothing.
+
+### Added — the registry is broker-only, portably
+
+- **G-020 (Registry state write, critical/deny)** denies agent Write/Edit operations
+  targeting `.bkit/state/*.json`, porting the machine-local Python pdca-guard's
+  PRE-EXEC semantics into bkit's own detector. A new `targetFields` rule property
+  scopes it to the tool's TARGET — a state-path mention in payload prose is not a
+  write. Documentation files (`.md`/`.txt`, any `docs/` path) are exempt *before* any
+  state-token matching, closing the reported false-positive class where a design doc
+  demonstrating a state-path command was denied for its content.
+- **G-019 redirect-form fix**: both alternations' bare `>>?` now require
+  `(?<![0-9&])` — stderr/descriptor redirects (`2>`, `&>`) are not the stdout-write
+  token, so read-only commands like `grep … 2>/dev/null` near a state path pass again
+  (live-measured false positive). Narrowing only; plain and append redirects still deny.
+- **`scripts/pdca-archive.js`** — the sanctioned archive path: dry-run by default,
+  `--apply` to mutate, completion gate evaluated before any filesystem change,
+  registry write ordered before document moves (the issue #89 `requireDocs` gate
+  would otherwise silently skip the archived transition), `--summary` for metrics
+  preservation. `lifecycle.archiveFeature` — previously wired to nothing — is its
+  registry writer.
+- **Deny guidance names the sanctioned paths**: `alternativesFor()` G-019/G-020
+  entries and the Write-path block message direct to `/pdca <phase> <feature>`, the
+  archive CLI, and the `bkit_pdca_status` MCP tool instead of generic "ask the user".
+- **The pdca skill's steps are brokered-registry-true**: every
+  "Update `.bkit/state/pdca-status.json`" step is now verify-only (fire-time writes,
+  gap-detector Stop hook for matchRate, TaskCompleted for `completed`, the CLI for
+  archive), `/pdca status` reads MCP-first with the lib API as fallback, and template
+  references disclose their resolved location (`${CLAUDE_PLUGIN_ROOT}/templates/`) so
+  agents stop searching the project root for them.
+
+### Fixed — the Write-path detector verdict was advisory only
+
+The gap analysis's Critical finding, live-confirmed by probe: `pre-write.js` Stage 6
+pushed destructive detections into `contextParts` and emitted them via `outputAllow` —
+the engine correctly detected G-020 on a registry Write while the write proceeded, and
+the audit trail recorded `destructive_blocked` / `result: 'blocked'` for writes that
+actually executed (the ENH-388 false-assurance class). Deny-action detections now
+return the ENH-398 verdict object and the hook blocks; `blocked` is reserved for real
+blocks, advisory detections log `destructive_detected` / `advisory`. A new L2
+synthetic-stdin hook suite pins the behavior end-to-end (registry Write blocked with
+sanctioned-path guidance; `.md` doc with state-path prose allowed; Bash parity).
+
+Verified across the cycle: gap analysis 73.5% → 95.0% after one Act iteration; QA_PASS
+(L1 31/31, L2 4/4, L3 11/11, L5 40/40, hook cost ~76–78 ms median = 1.7% of the 5 s
+budget); full battery 5,355 TC, 0 FAIL. The feature's own cycle advanced plan →
+archived through the new mechanism with zero manual registry writes, and archived
+itself with its own CLI.
+
 ## [2.1.38] - 2026-08-17
 
 ### Fixed — QA pipeline wiring
