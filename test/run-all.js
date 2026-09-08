@@ -84,6 +84,7 @@ const CATEGORIES = {
       'unit/remaining-exports-coverage.test.js',
       'unit/session-title.test.js',
       'unit/skill-invocation-effects.test.js',
+      'unit/subagent-stop-suggestion.test.js',
       'unit/skill-md-path-fix.test.js',
       'unit/sprint-executive-summary.test.js',
       'unit/sprint-handler-trust-action.test.js',
