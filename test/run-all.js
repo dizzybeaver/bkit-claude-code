@@ -205,6 +205,7 @@ const CATEGORIES = {
       'integration/quality-pipeline.test.js',
       'integration/control-pipeline.test.js',
       'integration/registry-lockdown.e2e.test.js',
+      'integration/registry-lockdown.hooks.test.js',
       'integration/common-removal.test.js',
       'integration/mcp-server.test.js',
       'integration/v200-wiring.test.js',

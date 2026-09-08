@@ -142,8 +142,8 @@ function run(argv) {
 
   if (!apply) {
     process.stdout.write(JSON.stringify({
-      feature, gatePassed: true, dryRun: true, summaryMode,
-      docsFound: found.map((d) => d.phase), archiveDir,
+      feature, phase: feat.phase, gatePassed: true, dryRun: true, summaryMode,
+      docsFound: found.map((d) => d.phase), archivePath: archiveDir,
     }, null, 2) + '\n');
     return EXIT.OK;
   }
@@ -168,7 +168,7 @@ function run(argv) {
   }
 
   process.stdout.write(JSON.stringify({
-    archived: result.archived, feature, archiveDir, summaryMode,
+    archived: result.archived, feature, archivePath: archiveDir, summaryMode,
     docsMoved: found.map((d) => path.basename(d.src)),
   }) + '\n');
   return result.archived ? EXIT.OK : EXIT.NOT_FOUND;
