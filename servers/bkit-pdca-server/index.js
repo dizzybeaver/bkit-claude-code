@@ -144,7 +144,10 @@ function errResponse(code, message, details) {
 const TOOLS = [
   {
     name: 'bkit_pdca_status',
-    description: 'Read current PDCA status. Optionally filter by feature name for detail.',
+    // registry-lockdown: this tool is the SANCTIONED read surface for PDCA
+    // phase state — agents read state here rather than opening the registry
+    // file (writes are broker-only: skill fires + the archive CLI).
+    description: 'Read current PDCA status (the sanctioned read surface — prefer this over opening the registry file). Optionally filter by feature name for detail.',
     inputSchema: {
       type: 'object',
       properties: {
