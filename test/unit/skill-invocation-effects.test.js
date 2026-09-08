@@ -118,6 +118,42 @@ const decisionLines = () => readAllLines('decisions');
     assert(after === before, `dedup must not add an audit line (before=${before} after=${after})`);
   });
 
+  // 6. Router action writes (the work/pdca-skill-fire-test-results.md defect):
+  //    `/pdca design <feature>` fires skill `pdca`, whose frontmatter declares
+  //    `pdca-phase: null` BY DESIGN. The phase lives in the ACTION token. The
+  //    fire must register a brand-new feature (no docs exist yet — they are the
+  //    phase's OUTPUT) and set its phase.
+  const readStatus = () => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(TMP, '.bkit', 'state', 'pdca-status.json'), 'utf8'));
+    } catch (_e) { return null; }
+  };
+  await tc('pdca router phase-action fire registers the feature and writes the phase', async () => {
+    await runSkillInvocationEffects(
+      'pdca', { action: 'design', feature: 'catalog-cli-integration' },
+      { source: 'skill-tool', dedupeKey: 's6' }
+    );
+    const status = readStatus();
+    const f = status && status.features && status.features['catalog-cli-integration'];
+    assert(f, 'feature catalog-cli-integration must be registered by the fire');
+    assert(f.phase === 'design', `phase=${f.phase}, expected design`);
+    assert(status.activeFeatures.includes('catalog-cli-integration'),
+      'feature must be in activeFeatures');
+  });
+
+  // 7. Router non-phase actions (status/next/…) must NOT write a phase —
+  //    resolvePdcaPhase falls back to the LIVE phase for those; writing it
+  //    back would stamp a no-op transition into history.
+  await tc('pdca router non-phase action does not write the registry', async () => {
+    await runSkillInvocationEffects(
+      'pdca', { action: 'status', feature: 'should-not-register' },
+      { source: 'skill-tool', dedupeKey: 's7' }
+    );
+    const status = readStatus();
+    assert(!status || !status.features || !status.features['should-not-register'],
+      'non-phase action must not register a feature');
+  });
+
   console.log(`\nskill-invocation-effects.test.js: ${pass} passed, ${fail} failed`);
   if (failures.length) {
     console.error('FAILURES:');
