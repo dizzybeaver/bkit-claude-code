@@ -24,19 +24,20 @@ const os = require('os');
 const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-status-orphan-'));
 process.env.CLAUDE_PROJECT_DIR = TMP_ROOT;
 process.on('exit', () => {
-  try { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); } catch (_e) { /* best-effort */ }
+  try { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 
 const { assert, skip, summary, reset } = require('../helpers/assert');
 reset();
 
+// eslint-disable-next-line no-console -- test output convention
 console.log('\n=== status-cleanup-orphan.test.js ===\n');
 
 let cleanup, migration;
 try {
   cleanup = require('../../lib/pdca/status-cleanup');
   migration = require('../../lib/pdca/status-migration');
-} catch (e) {
+} catch {
   cleanup = null;
   migration = null;
 }
@@ -49,7 +50,7 @@ function seedStatus(features) {
   fs.mkdirSync(path.dirname(statusPath), { recursive: true });
   const status = migration.createInitialStatusV2();
   status.features = features;
-  for (const [name, f] of Object.entries(features)) {
+  for (const name of Object.keys(features)) {
     status.activeFeatures.push(name);
   }
   status.primaryFeature = Object.keys(features)[0] || null;
@@ -165,6 +166,7 @@ function createDesignDoc(feature) {
   }
 }
 
+// eslint-disable-next-line no-console -- test output convention
 console.log('');
 summary();
 process.exit(0);

@@ -88,7 +88,7 @@ function updateArchiveIndex(indexPath, feature, relArchiveDir) {
   let body = '';
   try {
     body = fs.readFileSync(indexPath, 'utf8');
-  } catch (_e) { /* new index */ }
+  } catch { /* new index */ }
   if (!body.includes(`- ${feature} —`)) {
     if (!body.endsWith('\n') && body.length > 0) body += '\n';
     fs.mkdirSync(path.dirname(indexPath), { recursive: true });

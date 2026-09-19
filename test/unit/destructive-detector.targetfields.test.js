@@ -81,6 +81,7 @@ tc('Bash string form rm -rf still denies (legacy detect signature)', () => {
   assert(ids(res).includes('G-001'), `expected G-001, got [${ids(res).join(',')}]`);
 });
 
+// eslint-disable-next-line no-console -- test output convention
 console.log(`\ndestructive-detector.targetfields.test.js: ${pass} passed, ${fail} failed`);
 if (failures.length) {
   console.error('FAILURES:');

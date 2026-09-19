@@ -72,8 +72,7 @@ function isKnownFeature(feature, status) {
 // so top-level return is valid.
 if (require.main !== module) {
   module.exports = { parseMatchRate, extractFeatureFromText, isKnownFeature, matchRatePattern };
-  return;
-}
+} else {
 
 const { readStdinSync, readHookText, outputStopSurface } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
@@ -717,13 +716,13 @@ try {
   } else {
     sm.transition('check', 'ITERATE', { ...smCtx, matchRate });
   }
-} catch (_) {}
+} catch { /* non-critical */ }
 
 // v2.0.0: Metrics collection
 try {
   const mc = require('../lib/quality/metrics-collector');
   if (measured) mc.collectMetric('M1', feature || 'unknown', matchRate, 'gap-detector');
-} catch (_) {}
+} catch { /* non-critical */ }
 
 // v2.0.0: Audit logging
 try {
@@ -740,7 +739,8 @@ try {
     details: { matchRate, threshold, measured },
     result: !measured ? 'blocked' : (matchRate >= threshold ? 'success' : 'failure')
   });
-} catch (_) {}
+} catch { /* non-critical */ }
 
 outputStopSurface(reason);
 process.exit(0);
+}

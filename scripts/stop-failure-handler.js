@@ -21,17 +21,8 @@ const { getPdcaStatusFull } = require('../lib/pdca/status');
 // ============================================================
 
 /** Bare-require guard: export pure helpers when require()-d, don't run the hook. */
-if (require.main !== module) {
-  module.exports = { classifyError, parseFailurePayload };
-  return;
-}
-
-/**
- * Pure extraction of { errorType, errorMessage, parseStatus, parseWarnings }
- * from a raw StopFailure payload. Design Ref: §4 Fix 5.
- * @param {Object|null} payload
- * @returns {{ errorType: string, errorMessage: string, parseStatus: string, parseWarnings: string|null }}
- */
+// Design Ref: §4 Fix 5 — pure helpers, module scope so the bare-require export
+// below sees real functions regardless of which branch runs.
 function parseFailurePayload(payload) {
   const errorType = payload?.error_type || payload?.errorType
     || (payload?.message && payload.message.error_type)
@@ -83,39 +74,6 @@ function parseFailurePayload(payload) {
   return { errorType: effectiveErrorType, errorMessage, parseStatus, parseWarnings };
 }
 
-let input;
-try {
-  input = readStdinSync();
-} catch (e) {
-  debugLog('StopFailure', 'Failed to read stdin', { error: e.message });
-  process.exit(0);
-}
-
-// v2.1.12 Sprint A-2 (defect #14 fix): enrich error context capture via
-// parseFailurePayload (see above for the multi-source extraction rules;
-// Fix 5 adds string `error` + last_assistant_message sources and derives
-// errorType from the classification when absent).
-const {
-  errorType: effectiveErrorType,
-  errorMessage,
-  parseStatus,
-  parseWarnings,
-} = parseFailurePayload(input);
-const agentId = input.agent_id || (input.message && input.message.agent_id) || null;
-const agentType = input.agent_type || (input.message && input.message.agent_type) || null;
-const sessionId = input.session_id || (input.message && input.message.session_id) || null;
-
-debugLog('StopFailure', 'Hook started', {
-  errorType,
-  errorMessage: errorMessage.substring(0, 200),
-  agentId,
-  agentType,
-  parseStatus,
-  parseWarnings,
-  sessionId,
-});
-
-// Step 1: Classify error
 function classifyError(type, message) {
   const msg = (message || '').toLowerCase();
 
@@ -185,6 +143,49 @@ function classifyError(type, message) {
   };
 }
 
+if (require.main === module) {
+
+/**
+ * Pure extraction of { errorType, errorMessage, parseStatus, parseWarnings }
+ * from a raw StopFailure payload. Design Ref: §4 Fix 5.
+ * @param {Object|null} payload
+ * @returns {{ errorType: string, errorMessage: string, parseStatus: string, parseWarnings: string|null }}
+ */
+
+let input;
+try {
+  input = readStdinSync();
+} catch (e) {
+  debugLog('StopFailure', 'Failed to read stdin', { error: e.message });
+  process.exit(0);
+}
+
+// v2.1.12 Sprint A-2 (defect #14 fix): enrich error context capture via
+// parseFailurePayload (see above for the multi-source extraction rules;
+// Fix 5 adds string `error` + last_assistant_message sources and derives
+// errorType from the classification when absent).
+const {
+  errorType: effectiveErrorType,
+  errorMessage,
+  parseStatus,
+  parseWarnings,
+} = parseFailurePayload(input);
+const agentId = input.agent_id || (input.message && input.message.agent_id) || null;
+const agentType = input.agent_type || (input.message && input.message.agent_type) || null;
+const sessionId = input.session_id || (input.message && input.message.session_id) || null;
+
+debugLog('StopFailure', 'Hook started', {
+  errorType: effectiveErrorType,
+  errorMessage: errorMessage.substring(0, 200),
+  agentId,
+  agentType,
+  parseStatus,
+  parseWarnings,
+  sessionId,
+});
+
+// Step 1: Classify error
+
 const classification = classifyError(effectiveErrorType, errorMessage);
 
 // M9 fix (audit): capture (don't swallow) a failure to persist the error log so
@@ -245,7 +246,7 @@ try {
     backupToPluginData();
     debugLog('StopFailure', 'Emergency backup saved');
   }
-} catch (_) { /* non-critical */ }
+} catch { /* non-critical */ }
 
 // Step 4: Generate recovery guidance
 let guidance = `API Error: ${classification.category}. `;
@@ -274,3 +275,9 @@ debugLog('StopFailure', 'Hook completed', {
   severity: classification.severity,
   agentId
 });
+}
+
+// Bare-require guard: pure helpers exported below when require()-d (module-scope fns,
+// declared above, are only initialized after the hook branch evaluates... both
+// are function declarations hoisted to module scope — export at the end).
+module.exports = { classifyError, parseFailurePayload };

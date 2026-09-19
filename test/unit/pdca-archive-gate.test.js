@@ -183,6 +183,7 @@ tc('archiveFeature persists archived + archivedTo when docs are absent', () => {
   // pre-existing behavior outside this fix's file scope (filed as a finding).
 });
 
+// eslint-disable-next-line no-console -- test output convention
 console.log(`\npdca-archive-gate.test.js: ${pass} passed, ${fail} failed`);
 if (failures.length) {
   console.error('FAILURES:');
