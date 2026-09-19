@@ -28,6 +28,7 @@ const path = require('path');
 const { getFeatureStatus, deleteFeatureFromStatus, archiveFeatureToSummary } = require('../lib/pdca');
 const { archiveFeature } = require('../lib/pdca/lifecycle');
 const { findDoc } = require('../lib/core/paths');
+const { getPhaseNumber } = require('../lib/pdca/phase');
 
 const EXIT = { OK: 0, NOT_FOUND: 2, GATE: 3, DOCS: 4 };
 
@@ -115,14 +116,27 @@ function run(argv) {
     return EXIT.NOT_FOUND;
   }
 
-  // Gate: terminal state or measured quality (design §4.1). Fail closed —
-  // no filesystem change before the gate passes.
-  const gatePassed = feat.phase === 'completed'
-    || (typeof feat.matchRate === 'number' && feat.matchRate >= 90);
+  // Gate: terminal state, measured quality, or docs-on-disk (design §4.1,
+  // bugfix-wave-20260919 Fix 4). The docs-on-disk clause covers a feature in
+  // the report..pre-terminal range whose phase documents all exist — the work
+  // is verifiably complete on disk even if the phase field lagged. Fail
+  // closed — phases below report never pass on the docs clause.
+  const phaseOrder = getPhaseNumber(feat.phase);
+  const docsEligible = getPhaseNumber('report') <= phaseOrder && phaseOrder < getPhaseNumber('archived');
+  let gate = null;
+  if (feat.phase === 'completed') {
+    gate = 'completed';
+  } else if (typeof feat.matchRate === 'number' && feat.matchRate >= 90) {
+    gate = 'matchRate';
+  } else if (docsEligible && discoverDocs(feature).missing.length === 0) {
+    gate = 'docs-on-disk';
+  }
+  const gatePassed = gate !== null;
   if (!gatePassed) {
     process.stdout.write(JSON.stringify({
       error: 'E-ARCH-GATE', feature, phase: feat.phase,
       matchRate: typeof feat.matchRate === 'number' ? feat.matchRate : null,
+      gate: null,
       archived: false,
     }) + '\n');
     return EXIT.GATE;
@@ -142,7 +156,7 @@ function run(argv) {
 
   if (!apply) {
     process.stdout.write(JSON.stringify({
-      feature, phase: feat.phase, gatePassed: true, dryRun: true, summaryMode,
+      feature, phase: feat.phase, gatePassed: true, gate, dryRun: true, summaryMode,
       docsFound: found.map((d) => d.phase), archivePath: archiveDir,
     }, null, 2) + '\n');
     return EXIT.OK;

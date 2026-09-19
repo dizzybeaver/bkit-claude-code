@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.39] - 2026-09-19 (unreleased — version heading provisional; the maintainer assigns the release number)
+
+### Fixed — bugfix-wave-20260919 (six bug reports resolved via full PDCA cycle, matchRate 94%, QA_PASS)
+
+- **RB-003 — G-001/G-013 no longer fire on Write/Edit content.** Both rules now declare
+  `targetFields: ['command']` (the G-020 mechanism), so a Write whose *content* merely
+  mentions `rm -rf`, `rimraf`, or `shutil.rmtree` is no longer denied. Bash keeps full
+  coverage — the only surface that can actually execute a deletion. Both-sides regression
+  suite: `test/unit/destructive-detector.targetfields.test.js`.
+- **archive-phase-write — archive status write no longer silently gated out.**
+  `archiveFeature`'s archived-phase `updatePdcaStatus` call now passes `requireDocs:false`
+  (lib/pdca/lifecycle.js) — an archived feature has by definition left its docs' source
+  location, so the doc gate can no longer swallow the write.
+- **BR-001 — sanctioned orphan-row cleanup.** `deleteFeatureFromStatus` now removes
+  non-terminal active rows whose plan/design docs are provably absent
+  (`reason: 'orphan-removed (docs missing)'`), recovering the 3-feature
+  `canStartFeature` cap without hand-editing the registry. Live features with docs
+  remain protected: `test/unit/status-cleanup-orphan.test.js`.
+- **RB-002 + BR-002 — matchRate recording repaired.** `gap-detector-stop.js` now
+  reorders the regex (`Overall Match Rate` first, table form `Overall Match Rate | 98%`
+  handled), passes the regex-extracted feature name into `extractFeatureFromContext`
+  (the old call passed keys the function ignores, guaranteeing the primaryFeature
+  fallback), and adds a wrong-feature guard (unknown feature → parseWarning, nothing
+  recorded). Suite: `test/unit/gap-detector-stop-parsing.test.js`.
+- **RB-002 — archive gate accepts docs-on-disk evidence.** `pdca-archive.js` now passes
+  when phase is report..completed AND all 4 documents exist at canonical paths
+  (`gate: 'docs-on-disk'` in the payload) — registry bookkeeping drift no longer
+  permanently blocks archiving a genuinely complete cycle. Fail-closed preserved for
+  earlier phases. Suite: `test/unit/pdca-archive-gate.test.js`.
+- **stop-failure-payload — Stop failure entries carry real fields.** `parseFailurePayload`
+  (scripts/stop-failure-handler.js) extracts plain-string `error`, `last_assistant_message`
+  (string and content[0].text forms), derives errorType from the classifier when absent,
+  and adds an `exit_code` category — failures no longer collapse to unknown/low/empty.
+  Suite: `test/unit/stop-failure-payload.test.js`.
+
+### Added
+
+- 5 regression suites / 48 test cases covering the fixes above; full unit battery green
+  (1979/1980 executed, 0 fail). Bug reports `rb003`, `rb002`, `archive-phase-write`,
+  `br001`, `br002` moved to `bug_reports/completed/` with `.completed` markers; new
+  open reports filed during the wave: `br003` (updatePdcaStatus drops data.timestamps),
+  `br004` (CHANGELOG provisional heading vs plugin.json version-sync integration test —
+  pre-existing, maintainer action).
+
 ## [2.1.39] - 2026-09-07 (unreleased — version heading provisional; the maintainer assigns the release number)
 
 ### Fixed — the PDCA registry never advanced on a skill fire
