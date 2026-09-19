@@ -168,6 +168,7 @@ const CATEGORIES = {
       'unit/skill-orchestrator.test.js',
       'unit/skill-name.test.js',
       'unit/hook-reachability.test.js',
+      'unit/preflight-hookdrop-disambiguation.test.js',
       'unit/permission-manager.test.js',
       'unit/strategy.test.js',
       'unit/cto-logic.test.js',

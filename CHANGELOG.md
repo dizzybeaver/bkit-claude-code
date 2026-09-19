@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed — fix-preflight-hookdrop-mislead
+
+- **Session-start preflight disambiguation.** The `fork-default-agent-spawn` advisory
+  (lib/infra/cc-version-checker.js) and the #57317 hook-reachability warning
+  (hooks/session-start.js, via the pure `buildReachabilityWarning` builder in
+  lib/core/hook-reachability.js) now carry explicit non-causality wording: the version
+  advisory is NOT a hook failure; fresh bash_post/write_post canary stamps mean hooks ARE
+  firing; a stalled PDCA registry while canaries are fresh points at skipped
+  `/pdca <phase>` skill fires, not a hook drop. Closes the misdiagnosis chain that
+  produced invalid br004. Content locks: `test/unit/preflight-hookdrop-disambiguation.test.js`.
+
 ## [2.1.39] - 2026-09-19 (unreleased — version heading provisional; the maintainer assigns the release number)
 
 ### Fixed — bugfix-wave-20260919 (six bug reports resolved via full PDCA cycle, matchRate 94%, QA_PASS)
