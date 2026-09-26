@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **br003 (Low): updatePdcaStatus no longer drops data.timestamps.** The timestamps
   rebuild merges `data.timestamps` with `lastUpdated` kept last, so callers like
   `archiveFeature` (archivedAt) land in the registry.
+- **br007 (High): primaryFeature no longer reverts to a stale feature.** The
+  sanctioned promotion fallback picked `activeFeatures[0]` (the OLDEST entry), so
+  archiving the current feature re-promoted a days-old one and re-poisoned every
+  hook fallback binding. New `pickPrimarySuccessor(status)` (most recently active
+  by `timestamps.lastUpdated`) is now used at all 5 promotion sites; mutation-locked
+  by `test/unit/pdca-primary-successor.test.js`.
 - **Pre-existing (from upstream merge): destructive-detector targetFields grading was
   dead.** `detect()`'s targetFields branch pushed `rule.severity` directly, never
   consulting `severityFor` — every Bash-path match graded critical/deny regardless of

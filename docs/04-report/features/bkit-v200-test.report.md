@@ -1,7 +1,7 @@
 # bkit v2.0.5 Comprehensive Test Report
 
-> Generated: 2026-09-26T03:48:49.551Z
-> Total: 5359 TC, 5354 PASS, 0 FAIL, 5 SKIP
+> Generated: 2026-09-26T04:32:31.587Z
+> Total: 5359 TC, 5353 PASS, 0 FAIL, 6 SKIP
 > Pass Rate: 99.9%
 
 ---
@@ -10,7 +10,7 @@
 
 | Category | Total | Passed | Failed | Skipped | Rate |
 |----------|:-----:|:------:|:------:|:-------:|:----:|
-| Unit Tests | 1984 | 1984 | 0 | 0 | 100.0% PASS |
+| Unit Tests | 1984 | 1983 | 0 | 1 | 99.9% PASS |
 | Integration Tests | 611 | 611 | 0 | 0 | 100.0% PASS |
 | Security Tests | 267 | 267 | 0 | 0 | 100.0% PASS |
 | Regression Tests | 874 | 874 | 0 | 0 | 100.0% PASS |
@@ -22,7 +22,7 @@
 | Controllable AI Tests | 80 | 80 | 0 | 0 | 100.0% PASS |
 | behavioral | 45 | 45 | 0 | 0 | 100.0% PASS |
 | contract | 761 | 760 | 0 | 1 | 99.9% PASS |
-| **Total** | **5359** | **5354** | **0** | **5** | **99.9%** |
+| **Total** | **5359** | **5353** | **0** | **6** | **99.9%** |
 
 ## Version Comparison: v1.6.2 → v2.0.0
 

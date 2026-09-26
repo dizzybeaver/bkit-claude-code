@@ -75,6 +75,7 @@ const CATEGORIES = {
       'unit/pdca-status-full.test.js',
       'unit/pdca-status-gating.test.js',
       'unit/pdca-status-timestamps-merge.test.js',
+      'unit/pdca-primary-successor.test.js',
       'unit/stop-binding.test.js',
       'unit/stop-report-completion.test.js',
       'unit/preflight.test.js',
