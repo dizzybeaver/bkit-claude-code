@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — fix-br-report-strand-wave
+
+- **br006 (High): pdca-skill-stop no longer misbinds the feature.** A new pure helper
+  `lib/pdca/stop-binding.js` (`resolveStopFeature`) adds a per-feature evidence tier
+  between doc-path matching and the `primaryFeature` fallback: when exactly one
+  registry feature sits in the phase matching the fired action, the Stop handler binds
+  that feature instead of silently advancing `primaryFeature`. Mutation-locked by
+  `test/unit/stop-binding.test.js`.
+- **br005 (High): report→completed no longer depends on the Task system.** The Stop
+  handler advances report→completed when the report-phase fire is observed AND the
+  feature's report doc exists on disk (same check the archive CLI makes). The archive
+  gate's docs-on-disk arm now accepts bug-fix doc sets — `analysis` moved to optional,
+  so cycles that skip Check can archive instead of stranding at E-ARCH-GATE forever.
+- **br003 (Low): updatePdcaStatus no longer drops data.timestamps.** The timestamps
+  rebuild merges `data.timestamps` with `lastUpdated` kept last, so callers like
+  `archiveFeature` (archivedAt) land in the registry.
+- **Pre-existing (from upstream merge): destructive-detector targetFields grading was
+  dead.** `detect()`'s targetFields branch pushed `rule.severity` directly, never
+  consulting `severityFor` — every Bash-path match graded critical/deny regardless of
+  target scope. Fixed to grade by target like the segmented path (GP-11, SS148-07;
+  scoped find-delete now asks instead of denying).
+- Docs refreshed for the new lib module count (201 → 202) in CUSTOMIZATION-GUIDE.md
+  and AI-NATIVE-DEVELOPMENT.md.
+
 ### Fixed — fix-preflight-hookdrop-mislead
 
 - **Session-start preflight disambiguation.** The `fork-default-agent-spawn` advisory

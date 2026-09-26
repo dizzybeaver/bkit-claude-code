@@ -24,7 +24,9 @@ const path = require('path');
 // Direct module imports
 const { readStdinSync, readHookText, outputStopSurface, outputStopAllow } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
-const { getPdcaStatusFull, updatePdcaStatus, extractFeatureFromContext } = require('../lib/pdca/status');
+const { findDoc } = require('../lib/core/paths');
+const { getPdcaStatusFull, updatePdcaStatus } = require('../lib/pdca/status');
+const { resolveStopFeature } = require('../lib/pdca/stop-binding');
 const {
   emitUserPrompt,
   shouldAutoAdvance,
@@ -73,10 +75,19 @@ const actionPattern = /pdca\s+(pm|plan|design|do|analyze|iterate|qa|report|statu
 const actionMatch = inputText.match(actionPattern);
 
 // Extract feature name
+//
+// br006: resolveStopFeature binds the fired feature before falling back to
+// primaryFeature. Its middle tier — exactly one feature in the registry sits
+// in the phase this Stop's action targets — is the evidence the old
+// extractFeatureFromContext path lacked: with a foreign primaryFeature and no
+// doc path in the input, the phase was recorded against the WRONG feature.
+// With no actionMatch the helper degrades to the old behavior (doc-path
+// match → primaryFeature), so this is a strict improvement, not a replacement.
 const currentStatus = getPdcaStatusFull();
-const feature = extractFeatureFromContext({
-  agentOutput: inputText,
-  currentStatus
+const feature = resolveStopFeature({
+  inputText,
+  currentStatus,
+  activeSkill: actionMatch ? actionMatch[1].toLowerCase() : null,
 });
 
 /*
@@ -366,6 +377,44 @@ if (action && feature && ['plan', 'design', 'do', 'analyze', 'iterate', 'qa', 'r
     }
   } catch (e) {
     debugLog('Skill:pdca:Stop', 'Phase transition task creation failed', { error: e.message });
+  }
+}
+
+/*
+ * br005a: report→completed sanctioned write, independent of the Task system.
+ *
+ * Fork-mode sessions (CC v2.1.278+) expose no Task tools, so the TaskCompleted
+ * hook the report phase relies on never fires and the feature strands at
+ * phase=report — E-ARCH-GATE forever. This clause gives the Stop handler the
+ * same completion the Task path would have written, through the same
+ * sanctioned writer. Guards (fail closed):
+ *   - the feature's CURRENT phase must be 'report' (never skip from earlier),
+ *   - the report doc must exist on disk (findDoc — the same check the archive
+ *     CLI's docs arm makes; a Stop that merely mentions "report" is not
+ *     evidence the phase ran).
+ * requireDocs:false is deliberate: a bug-fix cycle's plan/design docs already
+ * gate the main update above; this clause must not silently no-op behind a
+ * second gate. Hook safety: any failure here logs and continues — it must
+ * never crash the session.
+ */
+if (action === 'report' && feature) {
+  try {
+    const featNow = getPdcaStatusFull(true)?.features?.[feature];
+    const reportDoc = findDoc('report', feature);
+    debugLog('Skill:pdca:Stop', 'report-completion clause evaluated', {
+      feature,
+      currentPhase: featNow?.phase || null,
+      reportDoc: reportDoc || 'missing',
+    });
+    if (featNow?.phase === 'report' && reportDoc) {
+      updatePdcaStatus(feature, 'completed', {}, { requireDocs: false });
+      debugLog('Skill:pdca:Stop', 'report→completed advanced (br005a)', { feature });
+    }
+  } catch (e) {
+    debugLog('Skill:pdca:Stop', 'report-completion clause failed (session continues)', {
+      feature,
+      error: e.message,
+    });
   }
 }
 

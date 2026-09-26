@@ -32,10 +32,18 @@ const { getPhaseNumber } = require('../lib/pdca/phase');
 
 const EXIT = { OK: 0, NOT_FOUND: 2, GATE: 3, DOCS: 4 };
 
-/** Phases whose documents MUST exist before an archive may proceed. */
-const REQUIRED_PHASES = ['plan', 'design', 'analysis', 'report'];
+/**
+ * Phases whose documents MUST exist before an archive may proceed.
+ *
+ * br005b: `analysis` moved to OPTIONAL_PHASES. Bug-fix cycles legitimately skip
+ * the Check/Analyze phase (no analysis doc is ever produced), so requiring it
+ * made the docs-on-disk gate arm unpassable for exactly the cycles most likely
+ * to need it (E-ARCH-GATE forever). Full cycles still archive — the analysis
+ * doc is archived when present via OPTIONAL_PHASES.
+ */
+const REQUIRED_PHASES = ['plan', 'design', 'report'];
 /** Optional phase documents — archived when present, never required. */
-const OPTIONAL_PHASES = ['pm', 'qa'];
+const OPTIONAL_PHASES = ['pm', 'qa', 'analysis'];
 
 function usage() {
   process.stderr.write('usage: node scripts/pdca-archive.js <feature> [--summary] [--apply]\n');
