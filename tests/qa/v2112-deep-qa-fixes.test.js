@@ -214,7 +214,15 @@ tc('L2-006', 'pdca-skill-stop bare-require emits no stdout (#10)', () => {
   const r = cp.spawnSync('node', ['-e', "const m = require('./scripts/pdca-skill-stop'); console.log(JSON.stringify(m));"], {
     cwd: ROOT, encoding: 'utf8', timeout: 5000,
   });
-  assertEq(r.stdout.trim(), '{}');
+  // Dual-mode contract (br014): bare-require exports the envelope helpers and
+  // prints NOTHING at require time — stdout must parse as exactly that one
+  // JSON object. (Old `=== '{}'` encoded the pre-dual-mode contract.)
+  let parsed = null;
+  try { parsed = JSON.parse(r.stdout.trim()); } catch { parsed = null; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    assertEq('(clean JSON exports)', r.stdout.slice(0, 80), 'bare-require emitted stdout noise');
+  }
+  assertEq(Array.isArray(parsed.ENVELOPE_ACTIONS), true);
 });
 
 tc('L2-008', 'createCheckpoint → verifyCheckpoint roundtrip (#12)', () => {

@@ -11,15 +11,112 @@
  */
 
 
-// v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
-// is require()-d instead of executed as a hook entrypoint, return
-// immediately so no stale stdout (decisions, advisory messages) is emitted
-// without a real hook payload. CommonJS module body is implicitly an IIFE,
-// so top-level return is valid.
-if (require.main !== module) { module.exports = {}; return; }
-
 const fs = require('fs');
 const path = require('path');
+
+// ============================================================
+// Envelope derivation (br014, fix-br013-014-wave D2) — pure helpers
+// factored out of the main flow so unit tests can require them without
+// executing the hook.
+//
+// The action used to be scraped from turn TEXT alone; a live report-phase
+// turn whose prose never said "pdca report" missed the report→completed
+// advance. Ground truth is the transcript's most recent pdca Skill
+// tool_use: {name:'Skill', input:{skill:'bkit:pdca', args:'report fix-x'}}.
+// ============================================================
+
+// Valid first tokens of a pdca skill invocation (superset of actionPattern,
+// br010 check alias included).
+const ENVELOPE_ACTIONS = [
+  'pm', 'plan', 'design', 'do', 'analyze', 'check', 'iterate', 'qa',
+  'report', 'status', 'next',
+];
+
+/** True for skill names 'pdca' and 'bkit:pdca' (any plugin prefix). */
+function isPdcaSkillName(skill) {
+  return typeof skill === 'string' && /(?:^|:)pdca$/i.test(skill);
+}
+
+/**
+ * Parse a pdca skill `args` string into { action, feature }.
+ * First token must be a known action (case-insensitive) or the whole
+ * entry is rejected (null). Feature = first non-flag token after it
+ * (flags like --scope are skipped); null when absent.
+ * @returns {{action: string, feature: string|null}|null}
+ */
+function parsePdcaSkillArgs(rawArgs) {
+  if (typeof rawArgs !== 'string') return null;
+  const tokens = rawArgs.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  const action = tokens[0].toLowerCase();
+  if (!ENVELOPE_ACTIONS.includes(action)) return null;
+  const featureToken = tokens.slice(1).find((t) => !t.startsWith('-'));
+  return { action, feature: featureToken || null };
+}
+
+/**
+ * Scan transcript JSONL lines (backwards) for the MOST RECENT assistant
+ * tool_use of the pdca Skill. Defensive: partial writes and non-JSON lines
+ * are skipped; a malformed entry never throws.
+ * @param {string[]} lines
+ * @returns {{action: string, feature: string|null}|null}
+ */
+function findPdcaEnvelope(lines) {
+  if (!Array.isArray(lines)) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const raw = lines[i];
+    if (!raw) continue;
+    let entry;
+    try {
+      entry = JSON.parse(raw);
+    } catch (_) {
+      continue; // partial write / non-JSON line — skip, don't abort
+    }
+    if (!entry || entry.type !== 'assistant') continue;
+    const content = entry.message && entry.message.content;
+    if (!Array.isArray(content)) continue;
+    // Within one entry take the LAST matching block (latest in time).
+    for (let j = content.length - 1; j >= 0; j--) {
+      const block = content[j];
+      if (!block || block.type !== 'tool_use' || block.name !== 'Skill') continue;
+      const toolInput = block.input;
+      if (!toolInput || !isPdcaSkillName(toolInput.skill)) continue;
+      const parsed = parsePdcaSkillArgs(toolInput.args);
+      if (parsed) return parsed; // first valid pdca hit scanning backwards = most recent
+    }
+  }
+  return null;
+}
+
+/**
+ * Derive { action, feature } from the hook payload's transcript envelope.
+ * Bounded scan (last ~200 lines is plenty for a Stop turn). Returns null —
+ * never throws — when there is no transcript_path (CLI/subprocess use:
+ * tier 1 silently skipped), the file is unreadable, or no valid pdca
+ * Skill tool_use exists.
+ * @param {*} input - parsed hook payload
+ * @returns {{action: string, feature: string|null}|null}
+ */
+function deriveEnvelopeAction(input) {
+  try {
+    const transcriptPath = input && (input.transcript_path || input.transcriptPath);
+    if (!transcriptPath || typeof transcriptPath !== 'string') return null;
+    const text = fs.readFileSync(transcriptPath, 'utf8');
+    const lines = text.split('\n');
+    return findPdcaEnvelope(lines.slice(-200));
+  } catch (_) {
+    return null;
+  }
+}
+
+// v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
+// is require()-d instead of executed as a hook entrypoint, export only
+// the pure helpers so no stale stdout (decisions, advisory messages) is
+// emitted without a real hook payload. CommonJS module body is implicitly
+// an IIFE, so top-level return is valid.
+if (require.main !== module) {
+  module.exports = { ENVELOPE_ACTIONS, isPdcaSkillName, parsePdcaSkillArgs, findPdcaEnvelope, deriveEnvelopeAction };
+} else {
 
 // Direct module imports
 const { readStdinSync, readHookText, outputStopSurface, outputStopAllow } = require('../lib/core/io');
@@ -74,6 +171,17 @@ debugLog('Skill:pdca:Stop', 'Input received', {
 const actionPattern = /pdca\s+(pm|plan|design|do|analyze|check|iterate|qa|report|status|next)/i;  // br010: check alias added
 const actionMatch = inputText.match(actionPattern);
 
+/*
+ * br014: derive action+feature from the transcript's most recent pdca Skill
+ * tool_use (the envelope the skill actually fired with) BEFORE falling back
+ * to the text regex. The regex scrapes turn prose; a live report-phase turn
+ * whose prose never contains the literal "pdca report" missed the
+ * report→completed advance. Precedence: envelope > text regex > phase.
+ * Null envelope (no transcript_path / no pdca tool_use / unreadable file)
+ * leaves the pre-br014 behavior exactly.
+ */
+const envelope = deriveEnvelopeAction(input);
+
 // Extract feature name
 //
 // br006: resolveStopFeature binds the fired feature before falling back to
@@ -84,11 +192,33 @@ const actionMatch = inputText.match(actionPattern);
 // With no actionMatch the helper degrades to the old behavior (doc-path
 // match → primaryFeature), so this is a strict improvement, not a replacement.
 const currentStatus = getPdcaStatusFull();
-const feature = resolveStopFeature({
+const envelopeAction = envelope ? envelope.action : null;
+let feature = resolveStopFeature({
   inputText,
   currentStatus,
-  activeSkill: actionMatch ? actionMatch[1].toLowerCase() : null,
+  activeSkill: envelopeAction || (actionMatch ? actionMatch[1].toLowerCase() : null),
 });
+
+/*
+ * br014 feature wiring — the envelope's feature is additional evidence for
+ * the binding, applied ONLY on top of resolveStopFeature's weakest tier:
+ * when the helper returned nothing, or returned nothing but the
+ * primaryFeature fallback, an envelope feature that exists in the registry
+ * wins. Doc-path matches (tier 1) and unique-phase matches (tier 2) stay
+ * stronger than the envelope — they are per-artifact evidence the helper
+ * already verified — so this cannot rebind a correctly-bound feature.
+ */
+const envelopeFeature = envelope ? envelope.feature : null;
+if (
+  envelopeFeature &&
+  currentStatus &&
+  currentStatus.features &&
+  Object.prototype.hasOwnProperty.call(currentStatus.features, envelopeFeature) &&
+  (!feature || feature === currentStatus.primaryFeature) &&
+  envelopeFeature !== feature
+) {
+  feature = envelopeFeature;
+}
 
 /*
  * Fall back to the phase the cycle is actually in.
@@ -122,7 +252,13 @@ function actionFromPhase() {
   return phase ? (PHASE_TO_ACTION[String(phase).toLowerCase()] || null) : null;
 }
 
-const action = actionMatch ? actionMatch[1].toLowerCase() : actionFromPhase();
+const action = envelopeAction ||
+  (actionMatch ? actionMatch[1].toLowerCase() : actionFromPhase());
+
+// br011 Fix#2 trace discipline: which tier produced the action must be
+// visible in the debug log, not inferred.
+const actionSource = envelopeAction ? 'envelope' : (actionMatch ? 'text' : (action ? 'phase' : 'none'));
+debugLog('Skill:pdca:Stop', 'action derived', { source: actionSource, action, feature: feature || null });
 
 debugLog('Skill:pdca:Stop', 'Context extracted', {
   action,
@@ -506,3 +642,4 @@ if (guidance) {
   outputStopAllow();
 }
 process.exit(0);
+} // end hook-entrypoint branch (require.main === module)
