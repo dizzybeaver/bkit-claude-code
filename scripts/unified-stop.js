@@ -116,7 +116,10 @@ function detectActiveSkill(hookContext) {
   // 4. From PDCA status (legacy fallback)
   const pdcaStatus = getPdcaStatusFull();
   if (pdcaStatus?.session?.lastSkill) {
-    return pdcaStatus.session.lastSkill;
+    // br015: session.lastSkill may hold the plugin-qualified fire name
+    // ('bkit:pdca'); SKILL_HANDLERS is keyed by bare folder name. Canonicalize
+    // with the same #125 normalizer the detection path above uses.
+    return normalizeSkillName(pdcaStatus.session.lastSkill);
   }
 
   return null;
