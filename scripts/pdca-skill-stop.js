@@ -71,7 +71,7 @@ debugLog('Skill:pdca:Stop', 'Input received', {
 
 // Extract action from skill invocation
 // Patterns: "pdca plan", "pdca design", "/pdca analyze", etc.
-const actionPattern = /pdca\s+(pm|plan|design|do|analyze|iterate|qa|report|status|next)/i;
+const actionPattern = /pdca\s+(pm|plan|design|do|analyze|check|iterate|qa|report|status|next)/i;  // br010: check alias added
 const actionMatch = inputText.match(actionPattern);
 
 // Extract feature name
@@ -296,12 +296,13 @@ if (nextStep && nextStep.message) {
 }
 
 // Update PDCA status if action completed
-if (action && feature && ['plan', 'design', 'do', 'analyze', 'iterate', 'qa', 'report'].includes(action)) {
+if (action && feature && ['plan', 'design', 'do', 'analyze', 'check', 'iterate', 'qa', 'report'].includes(action)) {
   const phaseMap = {
     plan: 'plan',
     design: 'design',
     do: 'do',
     analyze: 'check',
+    check: 'check',
     iterate: 'act',
     qa: 'qa',
     report: 'completed'
