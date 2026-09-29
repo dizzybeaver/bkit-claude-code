@@ -176,17 +176,40 @@ function executeHandler(handlerPath, context) {
 
   try {
     const fullPath = path.join(__dirname, handlerPath);
-    const handler = require(fullPath);
 
-    // Check if handler exports a run function (v1.4.4 pattern)
+    // v1.4.4 pattern first: a handler that exports run() executes in-process.
+    const handler = require(fullPath);
     if (typeof handler.run === 'function') {
       handler.run(context);
       return true;
     }
 
-    // Handler is self-executing (reads stdin itself)
-    // In this case, we've already required it which triggers execution
-    return true;
+    /*
+     * br015b: stdin-CLI handlers carry a bare-require guard (v2.1.12 Sprint
+     * C-2) — require()-ing them exports only pure helpers and the whole hook
+     * body (feature binding, updatePdcaStatus, guidance output) is skipped.
+     * Requiring one and assuming "self-executing" silently no-ops. Spawn it
+     * as a real child process instead: the entrypoint branch runs, reads the
+     * hook payload from its own stdin, and its stdout decisions flow back
+     * through this hook's stdout to Claude Code.
+     */
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(process.execPath, [fullPath], {
+      input: JSON.stringify(context || {}),
+      timeout: 8000,
+    });
+    if (result.status === 0) {
+      if (result.stdout && result.stdout.length) {
+        process.stdout.write(result.stdout);
+      }
+      return true;
+    }
+    debugLog('UnifiedStop', 'Handler subprocess failed', {
+      handler: handlerPath,
+      status: result.status,
+      error: result.stderr ? String(result.stderr).slice(0, 200) : null,
+    });
+    return false;
   } catch (e) {
     debugLog('UnifiedStop', 'Handler execution failed', {
       handler: handlerPath,
@@ -301,7 +324,15 @@ if (!handled && activeSkill && SKILL_HANDLERS[activeSkill]) {
  * here rather than read from a field that was never written.
  */
 const pdcaStatus = getPdcaStatusFull();
-const feature = pdcaStatus?.primaryFeature || null;
+// br015b: bind the transition to the feature the fired skill targeted
+// (session.lastSkillFeature, written at fire time by skill-invocation-effects
+// step-6). Falls back to primaryFeature when no fire recorded a feature —
+// the old behavior that misbound every Stop to ZfeatA (foreign primary).
+const recordedFeature = pdcaStatus?.session?.lastSkillFeature;
+const feature =
+  (recordedFeature && pdcaStatus?.features?.[recordedFeature] && recordedFeature) ||
+  pdcaStatus?.primaryFeature ||
+  null;
 const featureEntry = feature ? pdcaStatus?.features?.[feature] : null;
 const currentPhase = featureEntry?.phase || null;
 const nextPhase = (() => {
@@ -369,7 +400,14 @@ if (feature && currentPhase) {
 
         // Write gate result to pdca-status for visibility
         const { updatePdcaStatus: updateStatus } = require('../lib/pdca/status');
-        updateStatus(feature, currentPhase, {
+        // br015b: the skill handler (spawned above) may have already advanced
+        // the phase (e.g. report -> completed) by the time this gate write
+        // runs. currentPhase is a pre-handler snapshot — writing it back
+        // regressed the freshly-written phase (observed: completed at .367Z
+        // reverted to report at .378Z). Read the live phase instead.
+        const liveStatus = getPdcaStatusFull(true);
+        const livePhase = liveStatus?.features?.[feature]?.phase || currentPhase;
+        updateStatus(feature, livePhase, {
           lastGateResult: {
             verdict: gateResult.verdict,
             score: gateResult.score,

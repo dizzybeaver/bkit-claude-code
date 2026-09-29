@@ -193,10 +193,27 @@ const envelope = deriveEnvelopeAction(input);
 // match → primaryFeature), so this is a strict improvement, not a replacement.
 const currentStatus = getPdcaStatusFull();
 const envelopeAction = envelope ? envelope.action : null;
+/*
+ * br018: fire-time recorded action. When neither the transcript envelope nor
+ * the text regex yields an action token (envelopeAction null AND no
+ * actionMatch), the session block's lastSkillAction — written by
+ * skill-invocation-effects when the skill FIRED — is the remaining action
+ * evidence. Without it, tier 2 of resolveStopFeature received a null/unknown
+ * activeSkill, skipped, and the Stop fell through to the primaryFeature
+ * fallback, binding the transition to a foreign feature.
+ */
+const recordedAction = (currentStatus
+  && currentStatus.session
+  && typeof currentStatus.session.lastSkillAction === 'string'
+  && currentStatus.session.lastSkillAction)
+  ? currentStatus.session.lastSkillAction
+  : null;
 let feature = resolveStopFeature({
   inputText,
   currentStatus,
-  activeSkill: envelopeAction || (actionMatch ? actionMatch[1].toLowerCase() : null),
+  activeSkill: envelopeAction
+    || (actionMatch ? actionMatch[1].toLowerCase() : null)
+    || recordedAction,
 });
 
 /*
@@ -245,12 +262,12 @@ const PHASE_TO_ACTION = {
   report: 'report',
 };
 
-function actionFromPhase() {
+const actionFromPhase = function () {
   const features = currentStatus?.features || {};
   const key = feature || currentStatus?.primaryFeature;
   const phase = (key && features[key]?.phase) || currentStatus?.activePdca?.phase;
   return phase ? (PHASE_TO_ACTION[String(phase).toLowerCase()] || null) : null;
-}
+};
 
 const action = envelopeAction ||
   (actionMatch ? actionMatch[1].toLowerCase() : actionFromPhase());
@@ -634,7 +651,7 @@ try {
       mc.collectMetric('M10', f, hours, 'pdca-skill');
     }
   }
-} catch (_) {}
+} catch (_) { /* non-critical — best-effort write, failure is tolerated */ }
 
 if (guidance) {
   outputStopSurface(guidance);
