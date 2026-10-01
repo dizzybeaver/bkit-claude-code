@@ -328,11 +328,18 @@ const pdcaStatus = getPdcaStatusFull();
 // (session.lastSkillFeature, written at fire time by skill-invocation-effects
 // step-6). Falls back to primaryFeature when no fire recorded a feature —
 // the old behavior that misbound every Stop to ZfeatA (foreign primary).
+// br290: a recording naming a DEAD feature (archived out of the registry) is
+// proof the cycle completed — bind to NOTHING, never fall through to
+// primaryFeature (the phantom-rebind defect behind the ZfeatA design-demand
+// Stop blocks).
+const { isDeadRecordedFeature } = require('../lib/pdca/stop-binding');
 const recordedFeature = pdcaStatus?.session?.lastSkillFeature;
-const feature =
-  (recordedFeature && pdcaStatus?.features?.[recordedFeature] && recordedFeature) ||
-  pdcaStatus?.primaryFeature ||
-  null;
+const recordedDead = isDeadRecordedFeature(recordedFeature, pdcaStatus?.features);
+const feature = recordedDead
+  ? null
+  : ((recordedFeature && pdcaStatus?.features?.[recordedFeature] && recordedFeature) ||
+     pdcaStatus?.primaryFeature ||
+     null);
 const featureEntry = feature ? pdcaStatus?.features?.[feature] : null;
 const currentPhase = featureEntry?.phase || null;
 const nextPhase = (() => {

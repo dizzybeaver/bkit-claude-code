@@ -209,7 +209,7 @@ describe('br018 reader — resolveStopFeature tier 0 (recorded feature)', () => 
       .toBe('fix-br018-solo');
   });
 
-  test('(c) lastSkillFeature NOT in registry falls through to primaryFeature', () => {
+  test('(c) lastSkillFeature NOT in registry (dead record) binds to NOTHING — br290', () => {
     const proj = makeProj('br018-tier3-');
     seedRegistry(
       proj,
@@ -218,9 +218,12 @@ describe('br018 reader — resolveStopFeature tier 0 (recorded feature)', () => 
       'ZfeatA'
     );
     const status = JSON.parse(fs.readFileSync(registryPath(proj), 'utf8'));
-    // Stale/garbage recorded token must not hijack; tier 3 fallback applies.
+    // br290: a recorded token absent from the registry means the cycle
+    // completed (archive deletes the feature). The old fall-through to
+    // primaryFeature was the phantom-rebind defect behind the ZfeatA
+    // design-demand Stop blocks — bind to nothing instead.
     expect(resolveStopFeature({ currentStatus: status, activeSkill: null }))
-      .toBe('ZfeatA');
+      .toBeNull();
   });
 
   test('empty-string lastSkillFeature is ignored (tier 0 guard)', () => {
