@@ -261,6 +261,39 @@ if (
 }
 
 /*
+ * br287: terminal-feature early exit. archiveFeature KEEPS the feature key
+ * in the registry (phase 'archived'), so the br290 dead-record sentinel
+ * (key absent) does not fire — the stale report envelope then re-binds the
+ * archived feature and re-emits PDCA-COMPLETE on every later stop. Once the
+ * binding is final (all tiers above have spoken), a feature whose registry
+ * entry is terminal can never legitimately receive next-step guidance or a
+ * phase write from this Stop: approve silently, same contract as the
+ * br290b sentinel. The predicate mirrors the br288 writer guard
+ * (lib/pdca/status-core.js) so the emitter and the writer agree on what
+ * "terminal" means. 'completed' is included: the archive nudge belongs to
+ * the report-time Stop (phase is still 'report' at emission — the br005a
+ * completed-write happens later in this same run), so silencing later stops
+ * loses only the re-prompt spam, which is this bug's defect class.
+ */
+const boundEntry = (feature && currentStatus && currentStatus.features)
+  ? currentStatus.features[feature]
+  : null;
+if (
+  boundEntry &&
+  (boundEntry.phase === 'archived' ||
+    boundEntry.phase === 'completed' ||
+    boundEntry.archivedAt !== undefined ||
+    boundEntry.archivedTo !== undefined ||
+    (boundEntry.timestamps && boundEntry.timestamps.archivedAt !== undefined))
+) {
+  debugLog('Skill:pdca:Stop', 'bound feature is terminal — post-completion, allowing turn end', {
+    feature,
+    storedPhase: boundEntry.phase,
+  });
+  process.exit(0);
+}
+
+/*
  * Fall back to the phase the cycle is actually in.
  *
  * The invocation text is the better signal when present, but it is not
