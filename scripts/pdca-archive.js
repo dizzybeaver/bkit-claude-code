@@ -27,7 +27,7 @@ const path = require('path');
 
 const { getFeatureStatus, deleteFeatureFromStatus, archiveFeatureToSummary } = require('../lib/pdca');
 const { archiveFeature } = require('../lib/pdca/lifecycle');
-const { findDoc } = require('../lib/core/paths');
+const { findAllDocs } = require('../lib/core/paths');
 const { getPhaseNumber } = require('../lib/pdca/phase');
 
 const EXIT = { OK: 0, NOT_FOUND: 2, GATE: 3, DOCS: 4 };
@@ -55,16 +55,19 @@ function usage() {
  * @returns {{ found: Array<{phase:string,src:string}>, missing: string[] }}
  */
 function discoverDocs(feature) {
+  // br293: collect EVERY existing variant per phase (plain + bilingual
+  // .en.md/.ko.md siblings), not just findDoc's first hit — a single-path
+  // archive stranded the sibling of each pair in the source directory.
+  // Gate semantics unchanged: a phase is missing only when NO variant exists.
   const found = [];
   const missing = [];
   for (const phase of REQUIRED_PHASES) {
-    const p = findDoc(phase, feature);
-    if (p) found.push({ phase, src: p });
-    else missing.push(phase);
+    const docs = findAllDocs(phase, feature);
+    if (docs.length === 0) missing.push(phase);
+    else for (const src of docs) found.push({ phase, src });
   }
   for (const phase of OPTIONAL_PHASES) {
-    const p = findDoc(phase, feature);
-    if (p) found.push({ phase, src: p });
+    for (const src of findAllDocs(phase, feature)) found.push({ phase, src });
   }
   return { found, missing };
 }

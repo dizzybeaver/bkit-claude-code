@@ -112,6 +112,20 @@ registry state or pressure the agent into fabricating new work:
   drop. Content locks:
   `test/unit/preflight-hookdrop-disambiguation.test.js`.
 
+### Fixed — archive CLI now moves every phase-document variant
+
+- **`/pdca archive` no longer strands bilingual doc siblings.** The CLI's
+  `discoverDocs` collected one file per phase (`findDoc` returns the first
+  existing candidate), so a bilingual cycle — the project mandates en+ko
+  sibling pairs for new docs — archived one variant and left the other in the
+  source directory (observed twice; agents had to move the leftovers by
+  hand). A new `findAllDocs(phase, feature)` helper (lib/core/paths.js,
+  all readable candidates, deduped) backs a multi-variant collector; gate
+  semantics unchanged (a phase is missing only when no variant exists).
+  Mutation-verified regression suite:
+  `test-scripts/regression/br293-archive-bilingual-pairs.test.js`
+  (bilingual / monolingual / gate cases).
+
 ### Chore
 
 - `.gitignore`: `bkit-debug.log` ignored.
