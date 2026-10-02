@@ -18,18 +18,18 @@ registry state or pressure the agent into fabricating new work:
   (phase `archived`, `archivedAt`, `archivedTo`); archive-path writes stay permitted.
   Previously a stale Stop-handler fire silently rewound `archived` features to
   `act`/`do`, corrupting the audit trail. Mutation-verified regression suite:
-  `test-scripts/regression/br288-terminal-guard.test.js`.
+  `test-scripts/regression/terminal-guard.test.js`.
 - **Dead-record binding sentinel (`lib/pdca/stop-binding.js`, `scripts/unified-stop.js`).**
   A fire-time `lastSkillFeature` recording that names a feature absent from the
   registry is proof the cycle completed (archive deletes the feature) — the Stop
   binding now returns a null sentinel instead of falling through to
   `primaryFeature`, killing the phantom next-phase re-fires behind the observed
   9-consecutive-block loops. Shared `isDeadRecordedFeature` helper at both binding
-  sites; mutation-verified: `test-scripts/regression/br290-dead-record-no-rebind.test.js`.
+  sites; mutation-verified: `test-scripts/regression/dead-record-no-rebind.test.js`.
 - **Harness loop-breaker honored (both Stop handlers).** `stop_hook_active=true`
   (set by Claude Code after a Stop hook blocks once) now always exits 0 —
   previously both handlers ignored it and re-blocked. Verified in
-  `test-scripts/regression/br290b-stop-loop-breakers.test.js`.
+  `test-scripts/regression/stop-loop-breakers.test.js`.
 - **Terminal-feature emission silence (`scripts/pdca-skill-stop.js`).** Archiving
   keeps the feature key in the registry with `phase: 'archived'`, so the dead-record
   sentinel above did not fire — the stale transcript report envelope kept binding the
@@ -37,7 +37,7 @@ registry state or pressure the agent into fabricating new work:
   A new early exit (placed after all binding tiers, same terminal predicate as the
   write guard, plus `phase: 'completed'`) approves silently: exit 0, no output.
   Mutation-verified regression suite:
-  `test-scripts/regression/br287-terminal-complete-silence.test.js`
+  `test-scripts/regression/terminal-complete-silence.test.js`
   (archived / completed / live-feature control).
 - **Fire-time skill recording (`lib/orchestrator/skill-invocation-effects.js`,
   `lib/pdca/stop-binding.js`).** `lastSkillAction`/`lastSkillFeature` are now written
@@ -123,7 +123,7 @@ registry state or pressure the agent into fabricating new work:
   all readable candidates, deduped) backs a multi-variant collector; gate
   semantics unchanged (a phase is missing only when no variant exists).
   Mutation-verified regression suite:
-  `test-scripts/regression/br293-archive-bilingual-pairs.test.js`
+  `test-scripts/regression/archive-bilingual-pairs.test.js`
   (bilingual / monolingual / gate cases).
 
 ### Fixed — per-turn token measurement survives post-completion Stops
