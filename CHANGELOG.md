@@ -126,6 +126,19 @@ registry state or pressure the agent into fabricating new work:
   `test-scripts/regression/br293-archive-bilingual-pairs.test.js`
   (bilingual / monolingual / gate cases).
 
+### Fixed — per-turn token measurement survives post-completion Stops
+
+- **The token ledger no longer stops growing after a cycle archives.** The
+  post-completion dead-record exit in `unified-stop` fired before the
+  per-turn observability block at the end of the handler, so once a session's
+  fire-time feature recording named an archived-out feature, every later Stop
+  silently skipped token-ledger and cc-regression recording. The recording
+  block is hoisted into `recordTurnObservability()` and runs on BOTH exit
+  paths. Caught by pre-running the CI contract suite locally against a live
+  registry (a fresh CI checkout never sees it); regression is covered by
+  `test/contract/integration-runtime.test.js` (23/23 with the dead-record
+  state live).
+
 ### Chore
 
 - `.gitignore`: `bkit-debug.log` ignored.

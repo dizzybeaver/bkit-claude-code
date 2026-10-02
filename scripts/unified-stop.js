@@ -343,8 +343,61 @@ const pdcaStatus = getPdcaStatusFull();
 const { isDeadRecordedFeature } = require('../lib/pdca/stop-binding');
 const recordedFeature = pdcaStatus?.session?.lastSkillFeature;
 const recordedDead = isDeadRecordedFeature(recordedFeature, pdcaStatus?.features);
+
+/*
+ * Per-turn observability (token ledger + cc-regression events) must run on
+ * EVERY Stop, including early exits. The dead-record exit below used to fire
+ * before the accountant block at the end of the async body, so after a cycle
+ * archived (lastSkillFeature dead) every subsequent Stop silently stopped
+ * recording turns — caught by test/contract/integration-runtime.test.js
+ * locally (ledger stopped growing). Defined here, called at both exits.
+ * Best-effort — never blocks Stop flow.
+ */
+function recordTurnObservability() {
+  try {
+    const ccRegression = require('../lib/cc-regression');
+    const usage = (hookContext && hookContext.message && hookContext.message.usage) || {};
+    const ccVersionResolved = ccRegression.detectCCVersion() || process.env.CLAUDE_CODE_VERSION || 'unknown';
+    ccRegression.recordTurn({
+      // From stdin payload — env fallback prefers CLAUDE_CODE_SESSION_ID (#119)
+      sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '',
+      agent: activeAgent || 'main',
+      model: (hookContext.message && hookContext.message.model)
+        || process.env.CLAUDE_MODEL
+        || 'unknown',
+      ccVersion: ccVersionResolved,
+      turnIndex: Number.isFinite(hookContext.turn_index)
+        ? hookContext.turn_index
+        : parseInt(process.env.CLAUDE_TURN_INDEX || '0', 10),
+      inputTokens: Number.isFinite(usage.input_tokens) ? usage.input_tokens : 0,
+      outputTokens: Number.isFinite(usage.output_tokens) ? usage.output_tokens : 0,
+      cacheReadInputTokens: Number.isFinite(usage.cache_read_input_tokens) ? usage.cache_read_input_tokens : 0,
+      cacheCreationInputTokens: Number.isFinite(usage.cache_creation_input_tokens) ? usage.cache_creation_input_tokens : 0,
+      overheadDelta: parseInt(process.env.CLAUDE_OVERHEAD_DELTA || '0', 10),
+      parseStatus: (hookContext && hookContext.message) ? 'ok' : 'no_payload',
+      parseWarnings: (hookContext && hookContext.message)
+        ? null
+        : 'no message field in hookContext (env-fallback)',
+    });
+
+    // v2.1.10 Sprint 5.5: cc-regression attribution (NDJSON event log)
+    if (ccVersionResolved && ccVersionResolved !== 'unknown') {
+      ccRegression.recordEvent({
+        hookEvent: 'Stop',
+        ccVersion: ccVersionResolved,
+        sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || null,
+        timestamp: new Date().toISOString(),
+        context: { agent: activeAgent || 'main', skill: activeSkill || null },
+      });
+    }
+  } catch (e) {
+    debugLog('UnifiedStop', 'token-accountant recordTurn failed', { error: e.message });
+  }
+}
+
 if (recordedDead) {
   // br290b: post-completion Stop — approve silently, nothing to advance.
+  recordTurnObservability();
   process.exit(0);
 }
 const feature = recordedDead
@@ -806,53 +859,9 @@ if (!handled) {
   outputAllow(`Stop event processed.${trustInfo}${auditInfo}${copyTip}${nextActionHint}`, 'Stop');
 }
 
-// v2.1.12 Sprint A-1 (defect #17 fix): Record turn marker for ENH-264 per-turn
-// tracking. CC v2.1.x Stop hook does NOT inject CLAUDE_* env vars — all data is
-// in the stdin JSON payload (parsed into `hookContext` at line 244). Reading
-// from env vars produced 472/472 zero entries (CARRY-5 P0). Switched to
-// hookContext payload extraction per CC hook payload schema:
-//   { session_id, message: { model, usage: { input_tokens, output_tokens,
-//     cache_read_input_tokens, cache_creation_input_tokens } } }
-// Best-effort — never blocks Stop flow.
-try {
-  const ccRegression = require('../lib/cc-regression');
-  const usage = (hookContext && hookContext.message && hookContext.message.usage) || {};
-  const ccVersionResolved = ccRegression.detectCCVersion() || process.env.CLAUDE_CODE_VERSION || 'unknown';
-  ccRegression.recordTurn({
-    // From stdin payload — env fallback prefers CLAUDE_CODE_SESSION_ID (#119)
-    sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '',
-    agent: activeAgent || 'main',
-    model: (hookContext.message && hookContext.message.model)
-      || process.env.CLAUDE_MODEL
-      || 'unknown',
-    ccVersion: ccVersionResolved,
-    turnIndex: Number.isFinite(hookContext.turn_index)
-      ? hookContext.turn_index
-      : parseInt(process.env.CLAUDE_TURN_INDEX || '0', 10),
-    inputTokens: Number.isFinite(usage.input_tokens) ? usage.input_tokens : 0,
-    outputTokens: Number.isFinite(usage.output_tokens) ? usage.output_tokens : 0,
-    cacheReadInputTokens: Number.isFinite(usage.cache_read_input_tokens) ? usage.cache_read_input_tokens : 0,
-    cacheCreationInputTokens: Number.isFinite(usage.cache_creation_input_tokens) ? usage.cache_creation_input_tokens : 0,
-    overheadDelta: parseInt(process.env.CLAUDE_OVERHEAD_DELTA || '0', 10),
-    parseStatus: (hookContext && hookContext.message) ? 'ok' : 'no_payload',
-    parseWarnings: (hookContext && hookContext.message)
-      ? null
-      : 'no message field in hookContext (env-fallback)',
-  });
-
-  // v2.1.10 Sprint 5.5: cc-regression attribution (NDJSON event log)
-  if (ccVersionResolved && ccVersionResolved !== 'unknown') {
-    ccRegression.recordEvent({
-      hookEvent: 'Stop',
-      ccVersion: ccVersionResolved,
-      sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || null,
-      timestamp: new Date().toISOString(),
-      context: { agent: activeAgent || 'main', skill: activeSkill || null },
-    });
-  }
-} catch (e) {
-  debugLog('UnifiedStop', 'token-accountant recordTurn failed', { error: e.message });
-}
+// v2.1.12 Sprint A-1 (defect #17 fix): per-turn observability — see
+// recordTurnObservability() above (hoisted so early exits also record).
+recordTurnObservability();
 
 debugLog('UnifiedStop', 'Hook completed', {
   handled,
