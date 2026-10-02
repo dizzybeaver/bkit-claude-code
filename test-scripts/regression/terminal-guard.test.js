@@ -1,11 +1,11 @@
 /**
- * br288 regression: an archived feature must never drift back to an active
+ * br020 regression: an archived feature must never drift back to an active
  * phase. The terminal guard in updatePdcaStatus (lib/pdca/status-core.js)
  * rejects any non-archive phase write against a feature carrying archived
  * markers (phase 'archived', archivedAt, or archivedTo).
  *
  * True test: with the guard removed, the stale write lands and the phase
- * regresses (verified via mutation — see br288 Verification field).
+ * regresses (verified via mutation — see br020 Verification field).
  * The registry writes below happen in a throwaway os.tmpdir() sandbox via
  * CLAUDE_PROJECT_DIR isolation — the project's own registry is never touched.
  */
@@ -35,12 +35,12 @@ function readRegistry(tmp) {
   return JSON.parse(fs.readFileSync(registryPath, 'utf8'));
 }
 
-describe('br288 terminal guard in updatePdcaStatus', () => {
+describe('br020 terminal guard in updatePdcaStatus', () => {
   let tmp;
-  const feature = 'br288-e2e';
+  const feature = 'br020-e2e';
 
   beforeAll(() => {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br288-'));
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br020-'));
     // Drive a feature to archived state via the same lib the archive CLI uses.
     write(tmp, feature, 'completed', { matchRate: 95 });
     write(tmp, feature, 'archived', { archivedTo: 'docs/archive/2026-10/x/' });
@@ -56,7 +56,7 @@ describe('br288 terminal guard in updatePdcaStatus', () => {
   });
 
   test('stale phase write does not drift an archived feature backward', () => {
-    // Replay a stale phase write — the br288 failure shape (stale skill-fire
+    // Replay a stale phase write — the br020 failure shape (stale skill-fire
     // replay tries to set the feature back to an active phase).
     write(tmp, feature, 'do', {});
 
