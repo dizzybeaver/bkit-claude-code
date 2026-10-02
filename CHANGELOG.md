@@ -139,6 +139,22 @@ registry state or pressure the agent into fabricating new work:
   `test/contract/integration-runtime.test.js` (23/23 with the dead-record
   state live).
 
+### Fixed — CI aggregate gate: stale test contracts aligned with shipped behavior
+
+- The 403-file QA aggregate (contract-check CI) exposed three suites asserting
+  contracts their own change-waves had superseded — red since those waves
+  landed (their batteries ran only the jest suites), plus one stale doc count:
+  - destructive-detector.targetfields: G-001 now asserted per the v2.1.34 D9
+    contract (broad target denies, specific target asks) — both arms covered.
+  - pdca-archive-gate: `analysis` is an OPTIONAL phase document (bug-fix
+    cycles skip Check); `discoverDocs` missing-list asserted required-only.
+  - hook-behavioral-bash-pre: success-path stdout is opt-in
+    (`BKIT_VERBOSE_VALIDATION=1`); BPRE-05 made hermetic via a sandbox
+    `CLAUDE_PROJECT_DIR` (live session state leaked a "for sprint" clause
+    into the message when run under the aggregate).
+  - CUSTOMIZATION-GUIDE.md Scripts count corrected 64 → 65.
+- Full aggregate verified locally: 403 files, 7,155 PASS / 0 FAIL / 0 errors.
+
 ### Chore
 
 - `.gitignore`: `bkit-debug.log` ignored.
