@@ -1,6 +1,6 @@
 /**
- * br287 regression: a Stop bound to a TERMINAL feature must not re-emit the
- * stale report/PDCA-COMPLETE block. Unlike br290 (dead record — feature key
+ * br019 regression: a Stop bound to a TERMINAL feature must not re-emit the
+ * stale report/PDCA-COMPLETE block. Unlike br022 (dead record — feature key
  * absent from the registry), archiveFeature KEEPS the key with
  * phase 'archived', so the binder still resolves it and the emitter re-fires
  * the acknowledgement on every later stop.
@@ -10,7 +10,7 @@
  *   T3  control: a LIVE feature in phase 'report' still emits — the guard
  *       silences terminal features only, the handler is not neutered.
  *
- * Fixture detail (probe-proven via br290b): the registry MUST carry version
+ * Fixture detail (probe-proven via br022b): the registry MUST carry version
  * '3.0'. Without it the status migrator rebuilds the session block, stripping
  * lastSkill* — which silently invalidates the whole scenario.
  *
@@ -92,9 +92,9 @@ function runHandler(tmp) {
   }
 }
 
-describe('br287: terminal-feature Stop must stay silent', () => {
+describe('br019: terminal-feature Stop must stay silent', () => {
   let tmp;
-  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br287-')); });
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br019-')); });
   afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
   test('T1 archived feature key present + stale report envelope -> silent exit 0', () => {
