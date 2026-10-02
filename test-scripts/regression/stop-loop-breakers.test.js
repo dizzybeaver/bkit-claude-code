@@ -1,5 +1,5 @@
 /**
- * br290b regression: after a PDCA cycle completes and archives (feature
+ * br022b regression: after a PDCA cycle completes and archives (feature
  * deleted from the registry), the Stop handler must NOT re-emit the
  * envelope's next-step block. Two layers, both probe-proven:
  *
@@ -63,9 +63,9 @@ function runHandler(tmp, stopHookActive) {
   }
 }
 
-describe('br290b: post-completion Stop must not re-block', () => {
+describe('br022b: post-completion Stop must not re-block', () => {
   let tmp;
-  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br290b-')); });
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br022b-')); });
   afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
   test('T1 dead fire-time record + report envelope -> silent exit 0', () => {
