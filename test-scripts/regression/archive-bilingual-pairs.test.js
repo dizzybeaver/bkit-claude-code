@@ -1,5 +1,5 @@
 /**
- * br293 regression: the archive CLI must move EVERY doc variant per phase,
+ * br025 regression: the archive CLI must move EVERY doc variant per phase,
  * not just findDoc's first hit. Bilingual cycles (en+ko sibling pairs —
  * mandated by the project CLAUDE.md for new docs/) used to archive one
  * sibling and strand the other in the source directory; agents had to move
@@ -16,7 +16,7 @@
  * Registry writes and doc moves happen in a throwaway os.tmpdir() sandbox
  * via CLAUDE_PROJECT_DIR isolation — the project's own registry is never
  * touched. Registry fixtures carry version '3.0' (migrator pitfall, see
- * br290b test header).
+ * br022b test header).
  */
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -69,9 +69,9 @@ function runCli(feature, tmp) {
   }
 }
 
-describe('br293: archive CLI moves every doc variant per phase', () => {
+describe('br025: archive CLI moves every doc variant per phase', () => {
   let tmp;
-  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br293-')); });
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br025-')); });
   afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
   test('T1 bilingual en+ko pairs all moved, nothing stranded', () => {
