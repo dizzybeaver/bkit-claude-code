@@ -1,5 +1,5 @@
 /**
- * br290 regression: a fire-time recording (session.lastSkillFeature) naming a
+ * br022 regression: a fire-time recording (session.lastSkillFeature) naming a
  * feature ABSENT from the registry is proof the cycle completed (archive
  * deletes the feature). The Stop binding must bind to NOTHING — never fall
  * through to primaryFeature (the phantom-rebind defect behind the ZfeatA
@@ -19,21 +19,21 @@ const registry = (lastSkillFeature, features, primaryFeature) => ({
   primaryFeature,
 });
 
-describe('br290 dead-record no-rebind guard', () => {
+describe('br022 dead-record no-rebind guard', () => {
   test('T1: dead recording + phantom primary binds to NOTHING (null sentinel)', () => {
-    // Live br290 failure shape: br288 feature archived out (dead record),
+    // Live br022 failure shape: br020 feature archived out (dead record),
     // ZfeatA fixture left as primaryFeature (phase=plan, no docs).
-    const status = registry('fix-br288-terminal-guard', { ZfeatA: { phase: 'plan' } }, 'ZfeatA');
+    const status = registry('fix-br020-terminal-guard', { ZfeatA: { phase: 'plan' } }, 'ZfeatA');
     expect(resolveStopFeature({ currentStatus: status, activeSkill: 'design' })).toBeNull();
   });
 
   test('T2: live recording still binds tier-0 (br015b intact)', () => {
-    const status = registry('fix-br290-stop-fallthrough', {
-      'fix-br290-stop-fallthrough': { phase: 'do' },
+    const status = registry('fix-br022-stop-fallthrough', {
+      'fix-br022-stop-fallthrough': { phase: 'do' },
       ZfeatA: { phase: 'plan' },
     }, 'ZfeatA');
     expect(resolveStopFeature({ currentStatus: status, activeSkill: 'do' }))
-      .toBe('fix-br290-stop-fallthrough');
+      .toBe('fix-br022-stop-fallthrough');
   });
 
   test('T3: no recording + primary exists → primary fallback intact (br006)', () => {
