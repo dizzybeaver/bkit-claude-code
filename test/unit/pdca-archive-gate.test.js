@@ -161,7 +161,9 @@ tc('discoverDocs reports missing phases', () => {
   seedDocs(f, ['plan']);
   const { found, missing } = discoverDocs(f);
   assert(found.some((d) => d.phase === 'plan'), 'plan should be found');
-  assert(missing.includes('design') && missing.includes('analysis') && missing.includes('report'),
+  // 'analysis' is OPTIONAL (bug-fix cycles legitimately skip Check) — it is
+  // never reported missing; only the required phases are.
+  assert(missing.includes('design') && missing.includes('report') && !missing.includes('analysis'),
     `missing=${missing.join(',')}`);
 });
 

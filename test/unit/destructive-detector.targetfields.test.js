@@ -50,11 +50,18 @@ tc('RB-003: Edit payload with rm -rf in new_string is not denied by G-001', () =
 });
 
 // --- 2. Bash delete commands still deny (G-001 keeps teeth) ----------------
-tc('Bash rm -rf is still denied as G-001', () => {
-  const res = detect('Bash', { command: 'rm -rf /tmp/x' });
+tc('Bash rm -rf on a BROAD target is denied as G-001 (v2.1.34 D9: dangerous target still denies)', () => {
+  const res = detect('Bash', { command: 'rm -rf /' });
   assert(ids(res).includes('G-001'), `expected G-001, got [${ids(res).join(',')}]`);
   const rule = res.rules.find((r) => r.id === 'G-001');
   assert(rule.action === 'deny', `action=${rule.action}`);
+});
+
+tc('Bash rm -rf on a SPECIFIC target asks (v2.1.34 D9: a specific one asks)', () => {
+  const res = detect('Bash', { command: 'rm -rf /tmp/x' });
+  assert(ids(res).includes('G-001'), `expected G-001, got [${ids(res).join(',')}]`);
+  const rule = res.rules.find((r) => r.id === 'G-001');
+  assert(rule.action === 'ask', `action=${rule.action}`);
 });
 
 // --- 3. find-based deletion as Bash still denies (G-013) -------------------
