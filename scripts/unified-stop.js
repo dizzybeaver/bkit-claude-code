@@ -242,6 +242,14 @@ try {
   debugLog('UnifiedStop', 'Failed to parse context', { error: e.message });
 }
 
+// br290b: honor the harness Stop-loop breaker (stop_hook_active=true on the
+// retry after a block) — return success while it is true. Ignoring this let
+// any blocking handler loop 9 consecutive times.
+if (hookContext.stop_hook_active === true) {
+  debugLog('UnifiedStop', 'stop_hook_active=true — allowing turn end');
+  process.exit(0);
+}
+
 // v1.5.9: ENH-74 agent_id/agent_type extraction
 const agentId = hookContext.agent_id || null;
 const agentType = hookContext.agent_type || null;
@@ -335,6 +343,10 @@ const pdcaStatus = getPdcaStatusFull();
 const { isDeadRecordedFeature } = require('../lib/pdca/stop-binding');
 const recordedFeature = pdcaStatus?.session?.lastSkillFeature;
 const recordedDead = isDeadRecordedFeature(recordedFeature, pdcaStatus?.features);
+if (recordedDead) {
+  // br290b: post-completion Stop — approve silently, nothing to advance.
+  process.exit(0);
+}
 const feature = recordedDead
   ? null
   : ((recordedFeature && pdcaStatus?.features?.[recordedFeature] && recordedFeature) ||

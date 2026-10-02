@@ -153,6 +153,17 @@ try {
 }
 
 /*
+ * br290b: honor the harness Stop-loop breaker. After a Stop hook blocks once,
+ * Claude Code sets stop_hook_active=true on the retry; emitting another block
+ * then is what produced the observed 9-consecutive-block loops. Return
+ * success while it is true (harness contract).
+ */
+if (input && input.stop_hook_active === true) {
+  debugLog('Skill:pdca:Stop', 'stop_hook_active=true — allowing turn end');
+  process.exit(0);
+}
+
+/*
  * Read the skill's OUTPUT, not the envelope it arrived in. `JSON.stringify(input)`
  * yielded hook_event_name / session_id / transcript_path / cwd, and `actionPattern`
  * was matched against that — so `action` was always null, and null disables most
@@ -215,6 +226,18 @@ let feature = resolveStopFeature({
     || (actionMatch ? actionMatch[1].toLowerCase() : null)
     || recordedAction,
 });
+
+/*
+ * br290b: a null feature here is the dead-record sentinel from
+ * resolveStopFeature — the fire-time recording names a feature that was
+ * archived out of the registry, i.e. the cycle COMPLETED. This Stop is
+ * post-completion: approve silently (exit 0, no output = allow the turn to
+ * end). Emitting the envelope's next-step message here re-fired phantom
+ * "Completion report has been generated" blocks on every stop after archive.
+ */
+if (feature === null) {
+  process.exit(0);
+}
 
 /*
  * br014 feature wiring — the envelope's feature is additional evidence for
