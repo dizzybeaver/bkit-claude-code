@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — br-batch-287-289-291 (bug-fix batch cycle, archived 2026-10-02; commit 44060a9)
+
+- **br287 (Medium): post-archive stops no longer re-emit stale PDCA-COMPLETE.**
+  `archiveFeature` keeps the feature key in the registry with `phase: 'archived'`,
+  so br290's dead-record sentinel (key absent) never fired — the stale transcript
+  report envelope kept binding the archived feature and re-firing
+  "PDCA-COMPLETE … Do NOT stop" on every subsequent Stop. New terminal-feature
+  early exit in `scripts/pdca-skill-stop.js` (placed after all binding tiers,
+  same terminal predicate shape as the br288 writer guard in
+  `lib/pdca/status-core.js`): a bound feature that is `archived`, carries
+  `archivedAt`/`archivedTo` markers, or is `completed` exits 0 with no output —
+  the same silent-approval contract as the br290b sentinel. This is the fourth
+  defense layer (writer br288 / binder br290 / loop br290b / emitter br287).
+  Mutation-verified regression suite:
+  `test-scripts/regression/br287-terminal-complete-silence.test.js` (T1 archived
+  key present / T2 completed / T3 live-feature control; guard stashed → T1/T2 RED,
+  restored → 3/3 GREEN).
+- **br289 (Minor): eslint flat config now declares jest globals for test-scripts/.**
+  New override block for `test-scripts/**/*.test.js` (readonly
+  describe/it/test/expect/beforeAll/afterAll/beforeEach/afterEach/jest, inlined
+  literal per the config's import-free constraint) — the 210 no-undef errors from
+  br016's jest testMatch move are gone. `npx eslint test-scripts/`: 0 errors;
+  full-repo error count 2303 → 2046 (remainder pre-existing `no-console`
+  violations, out of scope).
+- **br292 (Minor, found in-cycle): eslint.config.js can now lint itself.** The base
+  block applied `sourceType: "script"` to every `**/*.js` file including the flat
+  config's own `export default`; a self-referential
+  `{ files: ["eslint.config.js"], languageOptions: { sourceType: "module" } }`
+  override fixes the parse error.
+- **br291 (High): closed host-side with evidence — no repo fix possible.** The
+  mid-session plugin hot-update skill-resolution break (catalog advertises
+  `bkit:pdca` while the resolver answers Unknown) lives in the Claude Code host's
+  session-start catalog vs mid-session resolver split; all fix options require
+  host changes. Fresh-session disambiguation proven (2026-10-02 `bkit:pdca` fire
+  resolved and executed). The sanctioned recovery path
+  (`scripts/pdca-record-qa.js` + state-machine transitions) remains documented;
+  the leftover `2.1.40.pre-br288sync-182935.tar.gz` in the plugin cache is
+  operator-side.
+- Bug-report housekeeping: br287/br289/br291/br292 moved to
+  `bug_reports/completed/BR/` with `.completed` markers; stale INDEX entries
+  removed (br017/br018 were already completed; top-level INDEX carried dead
+  rubicant-era links). Full battery: 9 suites, 73/73 passed. Cycle docs archived
+  to `docs/archive/2026-10/br-batch-287-289-291/` (en+ko pairs).
+
 ### Fixed — fix-br-report-strand-wave
 
 - **br006 (High): pdca-skill-stop no longer misbinds the feature.** A new pure helper
