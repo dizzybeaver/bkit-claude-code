@@ -109,13 +109,66 @@ function deriveEnvelopeAction(input) {
   }
 }
 
+// ============================================================
+// br039/br384 — session-ownership and completion-evidence helpers.
+// Pure (no stdout, no registry writes) so tests can require them via the
+// bare-require export below without executing the hook body.
+// ============================================================
+
+/** br039: a feature's ownerSession lease expires after 2h without refresh. */
+const OWNER_LEASE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * br039: should THIS session's Stop emit the [AUTO-TRANSITION] demand for a
+ * feature? A feature with a live ownerSession held by a different session is
+ * not this session's cycle to advance.
+ * @param {Object|null} entry - registry entry for the feature (features[f])
+ * @param {string|null} currentSessionId - the Stop payload's session id
+ * @param {number} [now] - epoch ms (injectable for tests)
+ * @returns {{allowed: boolean, reason: 'unowned'|'owner'|'lease-expired'|'foreign-session'}}
+ */
+function shouldAutoTransition(entry, currentSessionId, now = Date.now()) {
+  if (!entry || !entry.ownerSession) return { allowed: true, reason: 'unowned' };
+  if (entry.ownerSession === currentSessionId) return { allowed: true, reason: 'owner' };
+  const since = Date.parse(entry.ownerSince);
+  if (Number.isFinite(since) && (now - since) > OWNER_LEASE_MS) {
+    return { allowed: false, reason: 'lease-expired' };
+  }
+  return { allowed: false, reason: 'foreign-session' };
+}
+
+/**
+ * br384: did the check phase actually produce gap-analysis evidence?
+ * True when the registry entry carries a numeric matchRate OR an analysis
+ * doc exists under docs/03-analysis/<feature>.analysis*.md. Lenient by
+ * design on unreadable dirs (returns false — fail closed).
+ * @param {string} feature
+ * @param {Object|null} registryEntry - features[feature]
+ * @param {string} [projectDir] - injectable root (defaults env/cwd)
+ * @returns {boolean}
+ */
+function hasCheckEvidence(feature, registryEntry, projectDir) {
+  if (registryEntry && typeof registryEntry.matchRate === 'number') return true;
+  try {
+    const root = projectDir || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    const dir = path.join(root, 'docs', '03-analysis');
+    const names = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    return names.some((n) => n.startsWith(`${feature}.analysis`));
+  } catch (_) {
+    return false;
+  }
+}
+
 // v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
 // is require()-d instead of executed as a hook entrypoint, export only
 // the pure helpers so no stale stdout (decisions, advisory messages) is
 // emitted without a real hook payload. CommonJS module body is implicitly
 // an IIFE, so top-level return is valid.
 if (require.main !== module) {
-  module.exports = { ENVELOPE_ACTIONS, isPdcaSkillName, parsePdcaSkillArgs, findPdcaEnvelope, deriveEnvelopeAction };
+  module.exports = {
+    ENVELOPE_ACTIONS, isPdcaSkillName, parsePdcaSkillArgs, findPdcaEnvelope,
+    deriveEnvelopeAction, OWNER_LEASE_MS, shouldAutoTransition, hasCheckEvidence,
+  };
 } else {
 
 // Direct module imports
@@ -171,6 +224,17 @@ if (input && input.stop_hook_active === true) {
  * summary, and the M8/M10 metrics are all gated on it.
  */
 const inputText = readHookText(input);
+
+/*
+ * br039: the firing session's id, resolved the same way unified-stop.js
+ * resolves it (#119 precedence: payload > CLAUDE_CODE_SESSION_ID >
+ * CLAUDE_SESSION_ID). Stamped onto the feature entry at every phase write so
+ * a foreign session's Stop can tell the cycle is not its own.
+ */
+const fireSessionId = (input && input.session_id)
+  || process.env.CLAUDE_CODE_SESSION_ID
+  || process.env.CLAUDE_SESSION_ID
+  || null;
 
 debugLog('Skill:pdca:Stop', 'Input received', {
   inputLength: inputText.length,
@@ -473,12 +537,35 @@ if (nextStep && nextStep.message) {
           `Do NOT ask what to do next. The cycle is done.`,
         ].join('\n');
         debugLog('Skill:pdca:Stop', 'PDCA cycle completed', { feature, action });
+      } else if (
+        action === 'check' &&
+        !hasCheckEvidence(feature, currentStatus?.features?.[feature])
+      ) {
+        /*
+         * br384: the check-phase "completed" banner used to fire on skill-fire
+         * alone, demanding /pdca iterate or /pdca report with no gap-analysis
+         * evidence anywhere. Degrade to a record-only note; no next-phase
+         * demand. (do/report/qa/iterate/plan/design keep current semantics.)
+         */
+        guidance = [
+          `[bkit-pdca] Phase "check" skill fire recorded, but no gap-analysis evidence found`,
+          `(no analysis doc, no recorded matchRate) — run the gap-detector before proceeding.`,
+        ].join(' ');
+        debugLog('Skill:pdca:Stop', 'check-phase evidence gate failed (br384)', { feature });
       } else {
         // v2.1.5 F3: Strong directive instead of soft guidance
         const nextCommand = autoTrigger.skill
           ? `/${autoTrigger.skill} ${autoTrigger.args || feature || ''}`
           : null;
-        if (nextCommand) {
+        // br039 session isolation: a feature whose live ownerSession belongs
+        // to a DIFFERENT session is not this Stop's cycle to advance. No
+        // block, no phase demand — one informational line instead. A
+        // lease-expired owner also skips the demand (stale fire replay);
+        // absence of ownerSession (legacy entries) keeps the old behavior.
+        const ownership = shouldAutoTransition(
+          currentStatus?.features?.[feature], fireSessionId
+        );
+        if (nextCommand && ownership.allowed) {
           guidance += [
             '',
             '',
@@ -487,6 +574,13 @@ if (nextStep && nextStep.message) {
             `Do NOT ask the user for confirmation. Do NOT show Executive Summary.`,
             `Do NOT stop. Proceed immediately to the next phase.`,
           ].join('\n');
+        } else if (nextCommand && !ownership.allowed) {
+          debugLog('Skill:pdca:Stop', 'AUTO-TRANSITION suppressed by session ownership (br039)', {
+            feature, reason: ownership.reason, fireSessionId,
+          });
+          process.stderr.write(
+            `[bkit-pdca] PDCA feature '${feature}' is owned by another session (phase ${currentStatus?.features?.[feature]?.phase || 'unknown'}) — no action taken\n`
+          );
         }
       }
       debugLog('Skill:pdca:Stop', 'Auto-advance triggered', { autoTrigger });
@@ -536,9 +630,14 @@ if (action && feature && ['plan', 'design', 'do', 'analyze', 'check', 'iterate',
     }
   }
 
+  // br039: stamp ownership on every phase write. Unconditional overwrite IS
+  // the sanctioned takeover path — a /pdca fire from a different session than
+  // the recorded ownerSession takes the lease over by firing.
   updatePdcaStatus(feature, currentPhase, {
     lastAction: action,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    ownerSession: fireSessionId,
+    ownerSince: new Date().toISOString(),
   });
 
   debugLog('Skill:pdca:Stop', 'PDCA status updated', {

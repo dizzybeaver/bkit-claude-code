@@ -45,15 +45,17 @@ test('LC-02', 'EVENTS includes all expected events', () => {
     'MATCH_PASS', 'ITERATE', 'ANALYZE_DONE',
     'QA_PASS', 'QA_FAIL', 'QA_SKIP', 'QA_RETRY',
     'REPORT_DONE', 'ARCHIVE',
-    'REJECT', 'ERROR', 'RECOVER', 'RESET', 'ROLLBACK', 'TIMEOUT', 'ABANDON'
+    // br035: TIMEOUT/ABANDON removed (dead edges; stale cleanup owned by lifecycle)
+    'REJECT', 'ERROR', 'RECOVER', 'RESET', 'ROLLBACK'
   ];
   for (const e of expected) {
     assert.ok(sm.EVENTS.includes(e), `Missing event: ${e}`);
   }
 });
 
-test('LC-03', 'TRANSITIONS table has 25 entries', () => {
-  assert.strictEqual(sm.TRANSITIONS.length, 25, `Expected 25 transitions, got ${sm.TRANSITIONS.length}`);
+test('LC-03', 'TRANSITIONS table has 23 entries', () => {
+  // br035: 23 since TIMEOUT/ABANDON wildcard rows were removed
+  assert.strictEqual(sm.TRANSITIONS.length, 23, `Expected 23 transitions, got ${sm.TRANSITIONS.length}`);
 });
 
 // ---------- findTransition ----------

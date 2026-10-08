@@ -190,6 +190,10 @@ if (feature && fs.existsSync(planDocPath)) {
 }
 
 // Update PDCA status with match rate and fulfillment
+// br027: requireDocs:false — this feature was already validated against the
+// registry via isKnownFeature (line ~151), so the plan/design doc gate here
+// silently no-oped scoped features (sprint features whose docs live outside
+// the conventional paths) and their match rates never reached the registry.
 if (feature) {
   updatePdcaStatus(feature, 'check', {
     matchRate,
@@ -200,7 +204,7 @@ if (feature) {
       fulfilled: fulfillmentResult.fulfilled,
       total: fulfillmentResult.total
     } : null
-  });
+  }, { requireDocs: false });
 }
 
 // v2.0.5: Collect quality metrics (M1, M4)
@@ -669,7 +673,7 @@ try {
       '',
       '## Next Step',
       '',
-      nextStep ? nextStep.message : 'N/A',
+      nextStep || 'N/A',
       '',
     ].join('\n');
     fs.writeFileSync(analysisPath, analysisContent, 'utf-8');

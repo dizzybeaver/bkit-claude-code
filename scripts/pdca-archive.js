@@ -10,7 +10,7 @@
  * `.bkit/state/pdca-status.json` (G-020 denies that on the Write/Edit path).
  *
  * Usage:
- *   node scripts/pdca-archive.js <feature> [--summary] [--apply]
+ *   node scripts/pdca-archive.js <feature> [--summary] [--apply] [--parent <feature>]
  *
  * Dry-run is the DEFAULT: it evaluates gates and lists what would move,
  * mutating nothing. `--apply` is required to move documents and write the
@@ -46,30 +46,49 @@ const REQUIRED_PHASES = ['plan', 'design', 'report'];
 const OPTIONAL_PHASES = ['pm', 'qa', 'analysis'];
 
 function usage() {
-  process.stderr.write('usage: node scripts/pdca-archive.js <feature> [--summary] [--apply]\n');
+  process.stderr.write('usage: node scripts/pdca-archive.js <feature> [--summary] [--apply] [--parent <feature>]\n');
 }
 
 /**
  * Discover the phase documents that exist for a feature.
+ *
+ * br028: scoped child cycles (e.g. `--parent fix-br027-039-wave`) legitimately
+ * share their parent's plan/design/report docs — the child produces no phase
+ * documents of its own. When `parent` is given and a phase has no docs under
+ * the feature's own name, the parent's docs for that phase are collected
+ * instead (all three required phases, report included, so scoped cycles are
+ * not blocked by a doc the parent already owns). Backward compatible: no
+ * parent → exactly the old single-feature behavior.
  * @param {string} feature
- * @returns {{ found: Array<{phase:string,src:string}>, missing: string[] }}
+ * @param {string|null} [parent] - parent feature whose docs may satisfy a phase
+ * @returns {{ found: Array<{phase:string,src:string}>, missing: string[], parentUsed: string[] }}
  */
-function discoverDocs(feature) {
+function discoverDocs(feature, parent) {
   // br293: collect EVERY existing variant per phase (plain + bilingual
   // .en.md/.ko.md siblings), not just findDoc's first hit — a single-path
   // archive stranded the sibling of each pair in the source directory.
-  // Gate semantics unchanged: a phase is missing only when NO variant exists.
+  // Gate semantics unchanged: a phase is missing only when NO variant exists
+  // (own OR parent's, when a parent is supplied).
   const found = [];
   const missing = [];
+  const parentUsed = [];
   for (const phase of REQUIRED_PHASES) {
     const docs = findAllDocs(phase, feature);
+    if (docs.length === 0 && parent) {
+      const parentDocs = findAllDocs(phase, parent);
+      if (parentDocs.length > 0) {
+        parentUsed.push(phase);
+        for (const src of parentDocs) found.push({ phase, src });
+        continue;
+      }
+    }
     if (docs.length === 0) missing.push(phase);
     else for (const src of docs) found.push({ phase, src });
   }
   for (const phase of OPTIONAL_PHASES) {
     for (const src of findAllDocs(phase, feature)) found.push({ phase, src });
   }
-  return { found, missing };
+  return { found, missing, parentUsed };
 }
 
 /**
@@ -120,6 +139,15 @@ function run(argv) {
   }
   const apply = argv.includes('--apply');
   const summaryMode = argv.includes('--summary');
+  // br028: scoped cycles pass their parent feature; discoverDocs falls back
+  // to the parent's plan/design/report docs when the child has none of its own.
+  let parent = null;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--parent' && argv[i + 1]) {
+      parent = argv[i + 1];
+      i++;
+    }
+  }
 
   const feat = getFeatureStatus(feature);
   if (!feat) {
@@ -139,7 +167,7 @@ function run(argv) {
     gate = 'completed';
   } else if (typeof feat.matchRate === 'number' && feat.matchRate >= 90) {
     gate = 'matchRate';
-  } else if (docsEligible && discoverDocs(feature).missing.length === 0) {
+  } else if (docsEligible && discoverDocs(feature, parent).missing.length === 0) {
     gate = 'docs-on-disk';
   }
   const gatePassed = gate !== null;
@@ -153,7 +181,7 @@ function run(argv) {
     return EXIT.GATE;
   }
 
-  const { found, missing } = discoverDocs(feature);
+  const { found, missing, parentUsed } = discoverDocs(feature, parent);
   if (missing.length > 0) {
     process.stdout.write(JSON.stringify({
       error: 'E-ARCH-DOCS', feature, missingPhases: missing, archived: false,
@@ -169,6 +197,8 @@ function run(argv) {
     process.stdout.write(JSON.stringify({
       feature, phase: feat.phase, gatePassed: true, gate, dryRun: true, summaryMode,
       docsFound: found.map((d) => d.phase), archivePath: archiveDir,
+      // br028: phases resolved from the parent's docs (empty when no fallback).
+      ...(parentUsed.length > 0 ? { parentUsed } : {}),
     }, null, 2) + '\n');
     return EXIT.OK;
   }
