@@ -159,6 +159,39 @@ function hasCheckEvidence(feature, registryEntry, projectDir) {
   }
 }
 
+/*
+ * br040: same AUTO-TRANSITION withholding gates as unified-stop.js — pause
+ * flag, in-flight background work, PDCA specialist agent. Duplicated here
+ * (small, deliberate) because this handler does not import unified-stop,
+ * which spawns it as a child process.
+ * @param {Object} input - hook payload
+ * @returns {{skip: boolean, gate: string|null}}
+ */
+function shouldSkipAutoTransition(input) {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const { getPdcaStatusPath } = require('../lib/pdca/status');
+    const pauseFlag = path.join(path.dirname(getPdcaStatusPath()), 'pdca-pause');
+    if (fs.existsSync(pauseFlag)) {
+      return { skip: true, gate: 'pause-flag' };
+    }
+  } catch (_) { /* path unresolvable — other gates still apply */ }
+
+  const tasks = input && Array.isArray(input.background_tasks) ? input.background_tasks : null;
+  if (tasks && tasks.length > 0) {
+    return { skip: true, gate: 'background-work' };
+  }
+
+  const { getActiveAgent } = require('../lib/task/context');
+  const agent = input?.agent_name || input?.tool_input?.subagent_type || getActiveAgent() || null;
+  if (agent && /gap-detector|pdca-iterator|\bqa\b|report-generator|pm-lead/i.test(agent)) {
+    return { skip: true, gate: 'specialist-agent' };
+  }
+
+  return { skip: false, gate: null };
+}
+
 // v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
 // is require()-d instead of executed as a hook entrypoint, export only
 // the pure helpers so no stale stdout (decisions, advisory messages) is
@@ -168,6 +201,7 @@ if (require.main !== module) {
   module.exports = {
     ENVELOPE_ACTIONS, isPdcaSkillName, parsePdcaSkillArgs, findPdcaEnvelope,
     deriveEnvelopeAction, OWNER_LEASE_MS, shouldAutoTransition, hasCheckEvidence,
+    shouldSkipAutoTransition,
   };
 } else {
 
@@ -213,6 +247,18 @@ try {
  */
 if (input && input.stop_hook_active === true) {
   debugLog('Skill:pdca:Stop', 'stop_hook_active=true — allowing turn end');
+  process.exit(0);
+}
+
+/*
+ * br040: withhold the AUTO-TRANSITION when a specialist agent, background
+ * task, or operator pause flag owns the turn. One stderr line, exit 0 —
+ * no phase write, no directive.
+ */
+const autoTransitionGate = shouldSkipAutoTransition(input);
+if (autoTransitionGate.skip) {
+  process.stderr.write(`[bkit] AUTO-TRANSITION withheld (gate: ${autoTransitionGate.gate})\n`);
+  debugLog('Skill:pdca:Stop', 'br040 AUTO-TRANSITION withheld', { gate: autoTransitionGate.gate });
   process.exit(0);
 }
 

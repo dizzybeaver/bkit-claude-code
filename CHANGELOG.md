@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — br040–br041 wave (2026-10-09): evidence-gated AUTO-TRANSITION, feature-name intake validation
+
+Two active reports closed in one cycle (br040-041-stop-intake), both in the
+Stop-hook / PDCA-intake subsystem:
+
+- **br040 (High) — bookkeeping-only phase transitions.** `shouldSkipAutoTransition(hookContext)`
+  now gates the AUTO-TRANSITION emit in `scripts/unified-stop.js` and
+  `scripts/pdca-skill-stop.js`: skip on the `.bkit/state/pdca-pause` flag,
+  on in-flight background work (`hasInFlightBackgroundWork`), or on an
+  active PDCA specialist agent (`\bqa\b` word-boundary regex — no substring
+  over-match). A skip emits one stderr line and exits 0 without a phase
+  write or MUST-execute directive. Gate (d) evidence-staleness deferred.
+- **br041 (Medium) — junk feature names from free-text skill args.** New
+  `lib/pdca/validate-name.js` (`normalizeFeatureName`, `isValidFeatureName`)
+  wired at all three intake points: `initializeFeature` (throw on invalid),
+  `registerFeature` (warning + no registry write), `addActiveFeature`
+  (stderr reject, no push/save). A `/pdca <verb> <sentence>` fire can no
+  longer register the sentence as a feature name. Cleanup escape hatch for
+  legacy junk rows deferred.
+
+Testing: 2 new scoped suites (`fix-br040-stop-gates.test.js`,
+`fix-br041-name-validator.test.js`, MAIN-executed); round-1 battery surfaced
+9 regressions (a `hookContext` variable-scope ReferenceError aborting the
+hook body — silent via fail-open error handling — plus 2 doc-count drifts),
+all fixed; round-2 battery `node test/run-all.js` → 5359 TC, 5354 PASS,
+0 FAIL, 5 SKIP — ALL TESTS PASSED. Both reports moved to
+`bug_reports/completed/BR/`; cycle docs archived to
+`docs/archive/2026-10/br040-041-stop-intake/`.
+
+### Fixed — br027–br039 + br384 wave (October 2026): registry write integrity, terminal-state model, scoped-feature gates, stop-hook session isolation
+
+Fourteen active reports closed in one wave, spanning four fix clusters across the
+PDCA registry writers, the phase state machine, and the Stop handlers:
+
+- **Registry write integrity (br030/br031, br037).** `pdca-status` and
+  quality-metrics writers now use locked read-modify-write
+  (`stateStore.lockedUpdate`), closing lost-update races between concurrent
+  Stop handlers; `savePdcaStatus` reports write failures loudly (stderr +
+  `false` return) instead of silently succeeding.
+- **Terminal-state model (br032/br033, br035).** `completed` is terminal in
+  `PDCA_PHASES` (order 9), the br020 guard is extended to it, and
+  `validatePdcaTransition` rejects archived/completed exits; the dead
+  `TIMEOUT`/`ABANDON` archive edges are removed from the state machine.
+- **Scoped-feature gates (br027/br034, br028, br029, br036, br038).** The
+  `requireDocs` gate no longer silently drops writes (gap-detector check
+  writes and `completePdcaFeature` pass `requireDocs:false`; gate skips on
+  registry-known features surface on stderr); the archive CLI resolves
+  scope-parent docs (`--parent`, `parentUsed`); gap-detector's Next Step
+  renders the assigned string; the pipeline deliverable check now actually
+  evaluates its globs (self-contained matcher, bounded project walk); and
+  `enforceLimit` walks the full sorted list, reporting skipped entries.
+- **Stop-hook session isolation (br039/br384).** An `ownerSession` lease
+  guards the AUTO-TRANSITION emit so a foreign session cannot advance
+  another's feature, and check-phase completion demands real evidence
+  (analysis doc or `matchRate`) rather than accepting bare prose.
+
+Testing: 3 new scoped suites (32 tests), full battery 5356 TC ALL TESTS
+PASSED, stale state-machine tests updated to the br035 contract, and the
+FM-002 root cause (polluted registry row) removed via the sanctioned orphan
+path. All 14 active reports moved to `bug_reports/completed/BR/`.
+
 ### Fixed — PDCA Stop-handler completion-state hardening (registry terminal guard, dead-record binding, post-completion silence)
 
 A four-layer defense now keeps a finished PDCA cycle finished. Each layer sits at a

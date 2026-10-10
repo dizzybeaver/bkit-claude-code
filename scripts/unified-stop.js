@@ -161,6 +161,42 @@ function detectActiveAgent(hookContext) {
   return null;
 }
 
+/*
+ * br040: withhold the PDCA AUTO-TRANSITION when a specialist agent, a live
+ * background task, or an operator pause flag owns the turn. Firing the
+ * phase-advance directive at a dispatched gap-detector/pdca-iterator (or a
+ * session running background work) re-fired the transition mid-subagent and
+ * caused double phase writes. Checked before ANY phase bookkeeping.
+ * @param {Object} hookContext - Stop hook payload
+ * @returns {{skip: boolean, gate: string|null}}
+ */
+function shouldSkipAutoTransition(hookContext) {
+  // (a) operator pause flag — .bkit/state/pdca-pause beside the status file
+  try {
+    const { getPdcaStatusPath } = require('../lib/pdca/status');
+    const pauseFlag = path.join(path.dirname(getPdcaStatusPath()), 'pdca-pause');
+    if (require('fs').existsSync(pauseFlag)) {
+      return { skip: true, gate: 'pause-flag' };
+    }
+  } catch (_) { /* path unresolvable — other gates still apply */ }
+
+  // (b) background work in flight — a task notification may still land
+  if (hasInFlightBackgroundWork(hookContext)) {
+    return { skip: true, gate: 'background-work' };
+  }
+
+  // (c) a PDCA specialist agent holds the turn
+  const agent = hookContext?.agent_name
+    || hookContext?.tool_input?.subagent_type
+    || getActiveAgent()
+    || null;
+  if (agent && /gap-detector|pdca-iterator|\bqa\b|report-generator|pm-lead/i.test(agent)) {
+    return { skip: true, gate: 'specialist-agent' };
+  }
+
+  return { skip: false, gate: null };
+}
+
 // ============================================================
 // Handler Execution
 // ============================================================
@@ -393,6 +429,19 @@ function recordTurnObservability() {
   } catch (e) {
     debugLog('UnifiedStop', 'token-accountant recordTurn failed', { error: e.message });
   }
+}
+
+/*
+ * br040: gates BEFORE any transition bookkeeping. Ledger still records via
+ * recordTurnObservability (defined above, runs on every Stop); on skip we
+ * approve the turn (exit 0) with no phase write and no directive.
+ */
+const autoTransitionGate = shouldSkipAutoTransition(hookContext);
+if (autoTransitionGate.skip) {
+  recordTurnObservability();
+  process.stderr.write(`[bkit] AUTO-TRANSITION withheld (gate: ${autoTransitionGate.gate})\n`);
+  debugLog('UnifiedStop', 'br040 AUTO-TRANSITION withheld', { gate: autoTransitionGate.gate });
+  process.exit(0);
 }
 
 if (recordedDead) {
