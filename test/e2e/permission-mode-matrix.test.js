@@ -28,12 +28,34 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const BASH_HOOK = path.join(PROJECT_ROOT, 'scripts', 'unified-bash-pre.js');
 const WRITE_HOOK = path.join(PROJECT_ROOT, 'scripts', 'pre-write.js');
+
+// br045: the spawned hook children resolve PROJECT_DIR from their own env and
+// write runtime state (control-state.json) — the env below used to pin all 147
+// of them to the REAL project dir, which made this suite the last SC-1
+// poisoner. Each spawn now gets a sandbox dir instead, seeded with copies of
+// the real runtime/state files so every decision input (level, trust) is
+// identical while the writes land in the sandbox.
+const SANDBOX_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'perm-matrix-'));
+(function seedSandbox() {
+  for (const rel of ['.bkit/runtime/control-state.json', '.bkit/state/trust-profile.json']) {
+    const src = path.join(PROJECT_ROOT, rel);
+    if (!fs.existsSync(src)) continue;
+    const dst = path.join(SANDBOX_DIR, rel);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(src, dst);
+  }
+})();
+const realStatePath = path.join(PROJECT_ROOT, '.bkit/runtime/control-state.json');
+let realStateBefore = null;
+try { realStateBefore = fs.readFileSync(realStatePath, 'utf8'); } catch (_) { /* absent is fine */ }
 
 let passed = 0;
 let failed = 0;
@@ -129,7 +151,8 @@ function runHook(hook, toolName, toolInput, mode) {
     const child = execFile(process.execPath, [hook], {
       encoding: 'utf8',
       timeout: 30000,
-      env: { ...process.env, CLAUDE_PROJECT_DIR: PROJECT_ROOT },
+      // br045: state writes go to the sandbox; payload content unchanged.
+      env: { ...process.env, CLAUDE_PROJECT_DIR: SANDBOX_DIR },
     }, (err, stdout) => {
       // exit 2 is a blocking error per the CC hook contract
       if (err && err.code === 2) return resolve('deny');
@@ -263,6 +286,20 @@ console.log('-'.repeat(46 + MODES.length * 10 + 6));
 for (const { label, cls, row } of matrix) {
   console.log(pad(label.slice(0, 45), 46) + MODES.map((m) => pad(row[m], 10)).join('') + cls);
 }
+
+// ─── br045 redirection proof ────────────────────────────────────────────────
+// The 147 sandboxed hook children must not have touched the real
+// control-state.json (absence-tolerant byte-compare against the pre-run read).
+const realStateAfter = fs.existsSync(realStatePath) ? fs.readFileSync(realStatePath, 'utf8') : null;
+const redirected = realStateBefore === realStateAfter;
+if (redirected) {
+  passed++;
+  console.log('  ✓ br045 redirection proof — real control-state.json untouched by the 147 sandboxed hook runs');
+} else {
+  failed++;
+  console.log('  ✗ br045 redirection proof — real control-state.json changed during the matrix run');
+}
+fs.rmSync(SANDBOX_DIR, { recursive: true, force: true });
 
 console.log(`\n--- Results: ${passed}/${passed + failed} passed, ${failed} failed ---`);
   if (failed > 0) process.exit(1);

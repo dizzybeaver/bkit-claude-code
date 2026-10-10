@@ -234,7 +234,7 @@ hooks:
 | [[../../../agents/gap-detector|gap-detector]] | - | - | `gap-detector-stop.js` |
 | [[../../../agents/design-validator|design-validator]] | `design-validator-pre.js` | - | - |
 | [[../../../agents/code-analyzer|code-analyzer]] | Block (read-only) | - | `analysis-stop.js` |
-| [[../../../agents/qa-monitor|qa-monitor]] | `qa-pre-bash.js` | `qa-monitor-post.js` | `qa-stop.js` |
+| [[../../../agents/qa-monitor|qa-monitor]] | `unified-bash-pre.js` | ~~`qa-monitor-post.js`~~ REMOVED | `qa-stop.js` |
 | [[../../../agents/pdca-iterator|pdca-iterator]] | - | - | `iterator-stop.js` |
 
 ---
@@ -310,7 +310,7 @@ bkit-claude-code/
 
 ### Agent Memory
 
-All 36 agents have `memory:` frontmatter for cross-session context persistence:
+All 34 agents have `memory:` frontmatter for cross-session context persistence:
 
 | Scope | Agents |
 |-------|--------|

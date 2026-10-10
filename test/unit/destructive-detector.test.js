@@ -73,6 +73,25 @@ assert('DT-019', mod.isDestructive('npm run test') === false, 'npm run is safe')
 const dt20 = mod.detect('Bash', 'echo hello world');
 assert('DT-020', dt20.detected === false && dt20.confidence === 0, 'echo hello world not detected');
 
+// --- DT-021: br059 docs/work markdown exemption (G-002/G-009/G-010) ---
+
+// A Write targeting a docs/*.md file whose payload QUOTES a destructive
+// command is documentation, not execution: G-002 must stand down. The same
+// payload against a non-docs target must still be detected (true-test control).
+const dt21Payload = { content: 'git push origin main --force' };
+const dt21Doc = mod.detect('Write', { file_path: 'docs/02-design/fix.md', ...dt21Payload });
+const dt21Code = mod.detect('Write', { file_path: 'src/fix.js', ...dt21Payload });
+assert('DT-021', !dt21Doc.rules.some(r => r.id === 'G-002') && dt21Code.rules.some(r => r.id === 'G-002'),
+  'br059: docs .md target exempts G-002; non-docs target still detects it');
+
+// --- DT-022: br059 traversal attempt must NOT be exempt ---
+// 'docs/../../../lib/evil.md' matches the naive segment regex but resolves
+// outside the project's docs/ tree — the resolved-path check must stand firm.
+const dt22Payload = { content: 'git push origin main --force' };
+const dt22Traversal = mod.detect('Write', { file_path: 'docs/../../../lib/evil.md', ...dt22Payload });
+assert('DT-022', dt22Traversal.rules.some(r => r.id === 'G-002'),
+  'br059: traversal target outside docs/ is NOT exempt, G-002 fires');
+
 // --- Summary ---
 
 console.log(`\nResults: ${passed}/${total} passed, ${failed} failed, ${skipped} skipped`);

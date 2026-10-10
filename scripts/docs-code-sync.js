@@ -32,14 +32,31 @@ const DEFAULT_DOC_TARGETS = [
   '.claude-plugin/plugin.json',
 ];
 
+// br200: vault opt-in — fenced declarations only.
+// Vault targets are scanned ONLY inside `<!-- docs-code-sync:begin -->` …
+// `<!-- docs-code-sync:end -->` fences (fenceMode: true), so prose and
+// diagram counts elsewhere in these files never false-positive the gate.
+const VAULT_DOC_TARGETS = [
+  'bkit-system/README.md',
+  'bkit-system/_GRAPH-INDEX.md',
+  'bkit-system/philosophy/core-mission.md',
+]; // br200: vault opt-in — fenced declarations only
+
 function isJsonFlag() {
   return process.argv.includes('--json');
 }
 
 function getDocsArg() {
   const arg = process.argv.find((a) => a.startsWith('--docs='));
-  if (!arg) return DEFAULT_DOC_TARGETS;
+  if (!arg) return DEFAULT_DOC_TARGETS.concat(VAULT_DOC_TARGETS); // br200: vault targets scanned by default
   return arg.slice('--docs='.length).split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+// br200: a doc is a vault target iff it appears in VAULT_DOC_TARGETS (by
+// project-relative path). Vault targets scan fenced declarations only.
+function isVaultTarget(doc) {
+  const rel = path.isAbsolute(doc) ? path.relative(PROJECT_ROOT, doc) : doc;
+  return VAULT_DOC_TARGETS.includes(rel);
 }
 
 async function main() {
@@ -68,7 +85,7 @@ async function main() {
       allDocDiffs.push({ docPath: doc, field: '_missing', declared: 0, actual: 0 });
       continue;
     }
-    const diffs = await scanner.crossCheck(doc);
+    const diffs = await scanner.crossCheck(doc, isVaultTarget(doc) ? { fenceMode: true } : undefined);
     allDocDiffs.push(...diffs);
   }
 

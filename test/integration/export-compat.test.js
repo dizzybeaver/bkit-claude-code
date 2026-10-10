@@ -48,9 +48,11 @@ const commonExports = Object.keys(common);
 const commonExportCount = commonExports.length;
 
 // TC-EC-01: core/index.js has expected export count (v2.1.0: common.js removed, core is the facade)
+// br051: core barrel deliberately grew past the old 120 ceiling — audit-wave modules were
+// wired in as additive re-exports (backward-compatible facade superset), not removals.
 assert('TC-EC-01',
-  commonExportCount >= 40 && commonExportCount <= 120,
-  `core/index.js has ${commonExportCount} exports (expected 40-120 range)`
+  commonExportCount >= 100 && commonExportCount <= 170,
+  `core/index.js has ${commonExportCount} exports (expected 100-170 range)`
 );
 
 // TC-EC-02: All common.js exports are functions or defined values
@@ -60,11 +62,11 @@ assert('TC-EC-02',
   `All common.js exports are defined (${undefinedExports.length} undefined)`
 );
 
-// TC-EC-03: Core module exports count (52 expected)
+// TC-EC-03: Core module exports count (br051 barrel growth: was 49-70, now brackets 154)
 const coreExportCount = Object.keys(core).length;
 assert('TC-EC-03',
-  coreExportCount >= 49 && coreExportCount <= 70,
-  `core/index.js has ${coreExportCount} exports (expected 49-70)`
+  coreExportCount >= 140 && coreExportCount <= 170,
+  `core/index.js has ${coreExportCount} exports (expected 140-170)`
 );
 
 // TC-EC-04: PDCA module exports count (123+ expected after session-guide)

@@ -4,7 +4,7 @@
  * Verifies:
  *   1. lib/domain/ports/mcp-tool.port.js exposes pure type definitions
  *      (frozen constants, isMCPToolPort, isValidTool).
- *   2. lib/infra/mcp-port-registry.js holds 16 tools = 10 pdca + 6 analysis.
+ *   2. lib/infra/mcp-port-registry.js holds 19 tools = 13 pdca + 6 analysis.
  *   3. Each registered tool has well-formed metadata.
  *   4. Caller-agnostic CALL_PATHS contract honored (ENH-277).
  *
@@ -92,14 +92,14 @@ test('isValidTool: rejects invalid metadata.category', () => {
   assert.ok(r.errors.includes('metadata.category'));
 });
 
-// ── Registry: 16 tools = 10 pdca + 6 analysis ────────────────────────────
-test('Registry: TOTAL_TOOLS === 16', () => {
-  assert.equal(registry.TOTAL_TOOLS, 16);
+// ── Registry: 19 tools = 13 pdca + 6 analysis ────────────────────────────
+test('Registry: TOTAL_TOOLS === 19', () => {
+  assert.equal(registry.TOTAL_TOOLS, 19);
 });
 
-test('Registry: 10 tools belong to bkit-pdca server', () => {
+test('Registry: 13 tools belong to bkit-pdca server', () => {
   const pdcaTools = registry.listByServer('bkit-pdca');
-  assert.equal(pdcaTools.length, 10);
+  assert.equal(pdcaTools.length, 13);
 });
 
 test('Registry: 6 tools belong to bkit-analysis server', () => {
@@ -107,7 +107,7 @@ test('Registry: 6 tools belong to bkit-analysis server', () => {
   assert.equal(analysisTools.length, 6);
 });
 
-test('Registry: all 16 tools have valid metadata shape', () => {
+test('Registry: all 19 tools have valid metadata shape', () => {
   for (const name of Object.keys(registry.TOOL_REGISTRY)) {
     const m = registry.TOOL_REGISTRY[name];
     assert.ok(['bkit-pdca', 'bkit-analysis'].includes(m.server), `bad server for ${name}`);
@@ -149,8 +149,8 @@ test('Registry: lookup returns null for unknown tool', () => {
 test('Registry: listByCategory groups tools correctly', () => {
   const reads = registry.listByCategory('read');
   const analyzes = registry.listByCategory('analyze');
-  // 10 pdca read + 3 analysis read (audit_search, checkpoint_list, checkpoint_detail) = 13
-  assert.equal(reads.length, 13);
+  // 13 pdca read + 3 analysis read (audit_search, checkpoint_list, checkpoint_detail) = 16
+  assert.equal(reads.length, 16);
   // 3 analysis analyze (gap_analysis, code_quality, regression_rules)
   assert.equal(analyzes.length, 3);
 });

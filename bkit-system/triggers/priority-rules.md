@@ -11,7 +11,7 @@ Order follows definition order (alphabetical file order or frontmatter definitio
 
 ```
 1. bkit-rules → pre-write.js (PDCA check + task classification)
-2. phase-2-convention → phase2-convention-pre.js
+2. phase-2-convention → pre-write.js (phase2-convention-pre.js removed — consolidated)
 3. (When specific agent is active) design-validator, code-analyzer
 ```
 
@@ -23,7 +23,7 @@ When `"decision": "block"` is returned, execution **stops immediately**.
 
 | Script | Block Condition |
 |--------|-----------------|
-| `qa-pre-bash.js` | Destructive commands (rm -rf, DROP TABLE, etc.) |
+| `unified-bash-pre.js` | Destructive commands (rm -rf, DROP TABLE, etc.) |
 | `code-analyzer` agent | Write/Edit attempt (read-only agent) |
 
 ---
@@ -112,7 +112,7 @@ Claude synthesizes and guides user
 Situation: Execute rm -rf /tmp/* command (during QA)
 
 Fired:
-1. qa-pre-bash.js → Detects destructive pattern
+1. unified-bash-pre.js → Detects destructive pattern
 2. Returns "decision": "block"
 
 Result: Command execution blocked, reason provided

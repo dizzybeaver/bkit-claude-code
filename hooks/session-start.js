@@ -75,9 +75,19 @@ try {
 }
 
 // --- 2. Restore: PLUGIN_DATA backup restoration ---
+// br071: capture the restore result and surface notable warnings (e.g. a
+// cross-project backup conflict from ENH-383) into additionalContext instead
+// of discarding them.
 const restore = require('./startup/restore');
+let restoreWarnings = [];
 try {
-  restore.run();
+  const restoreResult = restore.run();
+  if (restoreResult && Array.isArray(restoreResult.warnings) && restoreResult.warnings.length > 0) {
+    restoreWarnings = restoreResult.warnings;
+    for (const w of restoreWarnings) {
+      debugLog('SessionStart', 'Restore warning', { warning: w });
+    }
+  }
 } catch (e) {
   debugLog('SessionStart', 'Restore module failed', { error: e.message });
 }
@@ -106,6 +116,13 @@ try {
   additionalContext = sessionContext.build(null, onboardingContext);
 } catch (e) {
   debugLog('SessionStart', 'Session context module failed', { error: e.message });
+}
+
+// br071: surface PLUGIN_DATA restore warnings (e.g. cross-project backup
+// conflict) to the session, not just the debug log.
+if (restoreWarnings.length > 0) {
+  const restoreSection = '⚠ bkit state restore notice:\n' + restoreWarnings.map((w) => '- ' + w).join('\n');
+  additionalContext = additionalContext ? restoreSection + '\n\n' + additionalContext : restoreSection;
 }
 
 // --- v2.1.1 UI-02: Build dashboard sections in correct display order ---
@@ -342,7 +359,8 @@ const sessionTitle = generateSessionTitle({
   // ENH-419 (v2.1.33), Issue #77: SessionStart receives the title already in
   // effect — from `--name`, `/rename`, or a resumed session — and bkit must not
   // replace one the user chose. Documented at code.claude.com/docs/en/hooks.md:1039.
-  currentTitle: (typeof input === 'object' && input) ? input.session_title : undefined,
+  // br070: read the title from the hook payload variable, not an undefined `input`
+  currentTitle: (typeof hookPayload === 'object' && hookPayload) ? hookPayload.session_title : undefined,
 });
 
 // ENH-239 (Issue #81 Phase B): SHA-256 fingerprint dedup lock
@@ -426,7 +444,7 @@ try {
     // invocation never produces), so a missing/stale skill_post is suppressed
     // unless a canary (bash_post/write_post) corroborates a real loader drop
     // (#57317). See lib/core/hook-reachability.js for the full rationale.
-    const { evaluateReachability } = require('../lib/core/hook-reachability');
+    const { evaluateReachability, buildReachabilityWarning } = require('../lib/core/hook-reachability');
     const { missing, stale, expected, canaryUnhealthy, skillPostIdle, shouldWarn } =
       evaluateReachability(state, { now: Date.now(), staleThresholdMs: STALE_THRESHOLD_MS });
     if (skillPostIdle) {
@@ -444,7 +462,10 @@ try {
           reason: `bkit MON-CC-NEW-PLUGIN-HOOK-DROP: PostToolUse hook reachability lost. missing=[${missing.join(',')}] stale=[${stale.join(',')}]`,
         });
       } catch (_) { /* graceful */ }
-      const warnMsg = `\n⚠️  bkit hook reachability check: missing=[${missing.join(',')}] stale=[${stale.join(',')}]. CC plugin-hook drop (#57317) suspected — see docs/sprint/v2114 MON-CC-NEW-PLUGIN-HOOK-DROP.`;
+      // fix-preflight-hookdrop-mislead: warning text lives in the pure builder
+      // (lib/core/hook-reachability.js) so it is unit-testable without running
+      // this script (session-start.js is main-guard-less and process.exits).
+      const warnMsg = buildReachabilityWarning(missing, stale, reachFile);
       additionalContext = warnMsg + (additionalContext ? '\n' + additionalContext : '');
     }
   }

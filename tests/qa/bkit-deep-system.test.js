@@ -602,27 +602,64 @@ group('A5-audit/control/quality: detector/automation-level/quality-gates', () =>
     } catch (e) { /* optional */ }
   });
 
-  tc('A5-3 automation-controller setLevel range', () => {
+  // br045: the setLevel probes below used to write the REAL
+  // .bkit/runtime/control-state.json. Sandboxed to a throwaway CLAUDE_PROJECT_DIR;
+  // redirection + non-mutation asserted in A5-3b/A5-3c.
+  {
+    const realStatePath = path.join(PROJECT_ROOT, '.bkit/runtime/control-state.json');
+    let realStateBefore = null;
+    try { realStateBefore = fs.readFileSync(realStatePath, 'utf8'); } catch (_) { /* may not exist */ }
+    const savedProjectDir = process.env.CLAUDE_PROJECT_DIR;
+    const tmpDir = mkTmp();
     try {
+      process.env.CLAUDE_PROJECT_DIR = tmpDir;
+      // br045 fix: purge MUST include the lib/core/index.js BARREL key — getCore()
+      // memoizes require('../core'), and a barrel loaded before the sandbox pins a
+      // stale platform instance with the real PROJECT_DIR (verified by probe: the
+      // narrow regex wrote to the first-load dir, not the sandbox). Purging the
+      // whole lib/core/ subtree detaches every reference.
+      purge(/lib\/(core\/|control\/automation-controller)/);
       const ctrl = require(path.join(PROJECT_ROOT, 'lib/control/automation-controller'));
-      ctrl.setLevel(0);
-      const r = ctrl.setLevel(3, { reason: 'test' });
-      assert.equal(r.success, true);
-      assert.equal(r.newLevel, 3);
-      const bad = ctrl.setLevel(99);
-      assert.equal(bad.success, false);
-    } catch (e) { /* optional */ }
-  });
 
-  tc('A5-4 automation-controller legacy string names', () => {
-    try {
-      const ctrl = require(path.join(PROJECT_ROOT, 'lib/control/automation-controller'));
-      ctrl.setLevel('full-auto');
-      assert.equal(ctrl.getCurrentLevel(), 4);
-      ctrl.setLevel('manual');
-      assert.equal(ctrl.getCurrentLevel(), 0);
-    } catch (e) { /* optional */ }
-  });
+      tc('A5-3 automation-controller setLevel range', () => {
+        try {
+          ctrl.setLevel(0);
+          const r = ctrl.setLevel(3, { reason: 'test' });
+          assert.equal(r.success, true);
+          assert.equal(r.newLevel, 3);
+          const bad = ctrl.setLevel(99);
+          assert.equal(bad.success, false);
+        } catch (e) { /* optional */ }
+      });
+
+      tc('A5-4 automation-controller legacy string names', () => {
+        try {
+          ctrl.setLevel('full-auto');
+          assert.equal(ctrl.getCurrentLevel(), 4);
+          ctrl.setLevel('manual');
+          assert.equal(ctrl.getCurrentLevel(), 0);
+        } catch (e) { /* optional */ }
+      });
+
+      tc('A5-3b setLevel redirected to sandbox temp dir (br045)', () => {
+        assert(fs.existsSync(path.join(tmpDir, '.bkit/runtime/control-state.json')),
+          'sandbox control-state.json must exist after the setLevel probes');
+      });
+
+      tc('A5-3c real control-state.json untouched (br045)', () => {
+        if (realStateBefore === null) {
+          assert(!fs.existsSync(realStatePath), 'real state file must stay absent');
+        } else {
+          assert.equal(fs.readFileSync(realStatePath, 'utf8'), realStateBefore,
+            'real state file must be byte-identical after the sandbox');
+        }
+      });
+    } finally {
+      if (savedProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = savedProjectDir;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      purge(/lib\/(core\/|control\/automation-controller)/);
+    }
+  }
 
   tc('A5-5 audit-logger writeAuditLog file creation', () => {
     try {

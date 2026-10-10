@@ -81,7 +81,7 @@
 | 1.3.3 | .env file Write | Environment variable convention guidance | [ ] |
 | 1.3.4 | .md file Write | Empty output | [ ] |
 
-### 1.4 zero-script-qa (qa-pre-bash.js)
+### 1.4 zero-script-qa (unified-bash-pre.js)
 
 | # | Test Case | Expected Result | Pass |
 |---|-----------|-----------------|------|
@@ -102,7 +102,7 @@
 
 ## 2. PostToolUse Hooks Tests
 
-### 2.1 bkit-rules (pdca-post-write.js)
+### 2.1 bkit-rules (unified-write-post.js)
 
 | # | Test Case | Expected Result | Pass |
 |---|-----------|-----------------|------|
@@ -110,7 +110,7 @@
 | 2.1.2 | src/features/auth/ Write (no design doc) | Empty output | [ ] |
 | 2.1.3 | src/lib/utils.ts Write | Empty output | [ ] |
 
-### 2.2 phase-5-design-system (phase5-design-post.js)
+### 2.2 phase-5-design-system (phase5-design-post.js REMOVED — skill-dispatched verification)
 
 > **Note**: Extension-based detection (v1.2.1) - .tsx, .jsx, .vue, .svelte
 
@@ -122,7 +122,7 @@
 | 2.2.4 | src/App.vue Write (hardcoded colors) | "⚠️ Use design tokens" warning | [ ] |
 | 2.2.5 | src/Button.svelte Write | UI file detected | [ ] |
 
-### 2.3 phase-6-ui-integration (phase6-ui-post.js)
+### 2.3 phase-6-ui-integration (phase6-ui-post.js REMOVED — skill-dispatched verification)
 
 > **Note**: Extension-based UI detection (v1.2.1) + path-based layer detection
 
@@ -135,7 +135,7 @@
 | 2.3.5 | src/components/Modal.vue Write | "UI Layer Check" guidance | [ ] |
 | 2.3.6 | src/Card.svelte Write | "UI Layer Check" guidance | [ ] |
 
-### 2.4 qa-monitor (qa-monitor-post.js)
+### 2.4 qa-monitor (qa-monitor-post.js REMOVED — unified-write-post chain)
 
 | # | Test Case | Expected Result | Pass |
 |---|-----------|-----------------|------|
@@ -221,9 +221,9 @@
 |---|------|-------------------|------|
 | 7.1.1 | Request | bkit-rules skill activated | [ ] |
 | 7.1.2 | Doc check | Check design doc existence | [ ] |
-| 7.1.3 | Write | pdca-pre-write fires | [ ] |
+| 7.1.3 | Write | pre-write.js fires (pdca-pre-write removed) | [ ] |
 | 7.1.4 | Write | task-classify fires | [ ] |
-| 7.1.5 | After Write | pdca-post-write fires | [ ] |
+| 7.1.5 | After Write | unified-write-post.js fires (pdca-post-write removed) | [ ] |
 | 7.1.6 | Complete | Gap Analysis suggestion | [ ] |
 
 ### 7.2 Zero Script QA Full Flow
@@ -239,8 +239,8 @@
 | # | Step | Verification Item | Pass |
 |---|------|-------------------|------|
 | 7.2.1 | Request | zero-script-qa skill activated | [ ] |
-| 7.2.2 | Bash | qa-pre-bash fires | [ ] |
-| 7.2.3 | Report Write | qa-monitor-post fires | [ ] |
+| 7.2.2 | Bash | unified-bash-pre.js fires (qa-pre-bash removed) | [ ] |
+| 7.2.3 | Report Write | (qa-monitor-post removed — no post hook) | [ ] |
 | 7.2.4 | End | qa-stop fires | [ ] |
 
 ---
@@ -411,7 +411,7 @@ echo '{"tool_input":{"file_path":"src/features/auth/login.ts","content":"test"}}
 
 | ID | Test | Expected Result |
 |----|------|-----------------|
-| V16-T01 | Total exports count = 210 | `Object.keys(require('./lib/common')).length === 210` |
+| V16-T01 | ~~Total exports count = 210~~ OBSOLETE | `lib/common.js` removed in v2.x restructure — replace with a `lib/core/` + `lib/util/` smoke require |
 | V16-T02 | Total agents = 29 | 16 core + 5 PM Team + 8 new agents in agents/ directory |
 | V16-T03 | Total skills = 31 | 22 core + 5 bkend + 1 pm-discovery + 3 new in skills/ directory |
 | V16-T04 | CC v2.1.78 compatibility | All 12 hook events fire correctly |

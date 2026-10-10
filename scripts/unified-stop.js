@@ -116,7 +116,10 @@ function detectActiveSkill(hookContext) {
   // 4. From PDCA status (legacy fallback)
   const pdcaStatus = getPdcaStatusFull();
   if (pdcaStatus?.session?.lastSkill) {
-    return pdcaStatus.session.lastSkill;
+    // br015: session.lastSkill may hold the plugin-qualified fire name
+    // ('bkit:pdca'); SKILL_HANDLERS is keyed by bare folder name. Canonicalize
+    // with the same #125 normalizer the detection path above uses.
+    return normalizeSkillName(pdcaStatus.session.lastSkill);
   }
 
   return null;
@@ -158,6 +161,68 @@ function detectActiveAgent(hookContext) {
   return null;
 }
 
+/*
+ * br040: withhold the PDCA AUTO-TRANSITION when a specialist agent, a live
+ * background task, or an operator pause flag owns the turn. Firing the
+ * phase-advance directive at a dispatched gap-detector/pdca-iterator (or a
+ * session running background work) re-fired the transition mid-subagent and
+ * caused double phase writes. Checked before ANY phase bookkeeping.
+ * @param {Object} hookContext - Stop hook payload
+ * @returns {{skip: boolean, gate: string|null}}
+ */
+function shouldSkipAutoTransition(hookContext) {
+  // (a) operator pause flag — .bkit/state/pdca-pause beside the status file
+  try {
+    const { getPdcaStatusPath } = require('../lib/pdca/status');
+    const pauseFlag = path.join(path.dirname(getPdcaStatusPath()), 'pdca-pause');
+    if (require('fs').existsSync(pauseFlag)) {
+      return { skip: true, gate: 'pause-flag' };
+    }
+  } catch (_) { /* path unresolvable — other gates still apply */ }
+
+  // (b) background work in flight — a task notification may still land
+  if (hasInFlightBackgroundWork(hookContext)) {
+    return { skip: true, gate: 'background-work' };
+  }
+
+  // (c) a PDCA specialist agent holds the turn
+  const agent = hookContext?.agent_name
+    || hookContext?.tool_input?.subagent_type
+    || getActiveAgent()
+    || null;
+  if (agent && /gap-detector|pdca-iterator|\bqa\b|report-generator|pm-lead/i.test(agent)) {
+    return { skip: true, gate: 'specialist-agent' };
+  }
+
+  // (d) br040-041-followups: stale-evidence gate (parity with pdca-skill-stop).
+  // The CURRENT phase's doc artifact must exist before an auto-transition is
+  // earned. Unresolvable feature/phase does NOT skip.
+  try {
+    const { getPdcaStatusFull, getPdcaStatusPath } = require('../lib/pdca/status');
+    const status = getPdcaStatusFull();
+    const feature = status?.primaryFeature || (status?.activeFeatures || [])[0] || null;
+    const phase = feature ? status?.features?.[feature]?.phase : null;
+    const PHASE_DOC_DIRS = {
+      plan: 'docs/01-plan/features',
+      design: 'docs/02-design/features',
+      check: 'docs/03-analysis',
+      report: 'docs/04-report/features',
+      qa: 'docs/05-qa',
+    };
+    if (feature && phase && PHASE_DOC_DIRS[phase]) {
+      // Project root = two levels above .bkit/state/ (status file's parent dir).
+      const projectRoot = path.resolve(path.dirname(getPdcaStatusPath()), '..', '..');
+      const dir = path.join(projectRoot, PHASE_DOC_DIRS[phase]);
+      const names = require('fs').existsSync(dir) ? require('fs').readdirSync(dir) : [];
+      if (!names.some((n) => n.startsWith(`${feature}.`))) {
+        return { skip: true, gate: 'stale-evidence' };
+      }
+    }
+  } catch (_) { /* status unresolvable — no skip */ }
+
+  return { skip: false, gate: null };
+}
+
 // ============================================================
 // Handler Execution
 // ============================================================
@@ -173,17 +238,40 @@ function executeHandler(handlerPath, context) {
 
   try {
     const fullPath = path.join(__dirname, handlerPath);
-    const handler = require(fullPath);
 
-    // Check if handler exports a run function (v1.4.4 pattern)
+    // v1.4.4 pattern first: a handler that exports run() executes in-process.
+    const handler = require(fullPath);
     if (typeof handler.run === 'function') {
       handler.run(context);
       return true;
     }
 
-    // Handler is self-executing (reads stdin itself)
-    // In this case, we've already required it which triggers execution
-    return true;
+    /*
+     * br015b: stdin-CLI handlers carry a bare-require guard (v2.1.12 Sprint
+     * C-2) — require()-ing them exports only pure helpers and the whole hook
+     * body (feature binding, updatePdcaStatus, guidance output) is skipped.
+     * Requiring one and assuming "self-executing" silently no-ops. Spawn it
+     * as a real child process instead: the entrypoint branch runs, reads the
+     * hook payload from its own stdin, and its stdout decisions flow back
+     * through this hook's stdout to Claude Code.
+     */
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(process.execPath, [fullPath], {
+      input: JSON.stringify(context || {}),
+      timeout: 8000,
+    });
+    if (result.status === 0) {
+      if (result.stdout && result.stdout.length) {
+        process.stdout.write(result.stdout);
+      }
+      return true;
+    }
+    debugLog('UnifiedStop', 'Handler subprocess failed', {
+      handler: handlerPath,
+      status: result.status,
+      error: result.stderr ? String(result.stderr).slice(0, 200) : null,
+    });
+    return false;
   } catch (e) {
     debugLog('UnifiedStop', 'Handler execution failed', {
       handler: handlerPath,
@@ -214,6 +302,14 @@ try {
   hookContext = (input && typeof input === 'object') ? input : {};
 } catch (e) {
   debugLog('UnifiedStop', 'Failed to parse context', { error: e.message });
+}
+
+// br290b: honor the harness Stop-loop breaker (stop_hook_active=true on the
+// retry after a block) — return success while it is true. Ignoring this let
+// any blocking handler loop 9 consecutive times.
+if (hookContext.stop_hook_active === true) {
+  debugLog('UnifiedStop', 'stop_hook_active=true — allowing turn end');
+  process.exit(0);
 }
 
 // v1.5.9: ENH-74 agent_id/agent_type extraction
@@ -298,7 +394,92 @@ if (!handled && activeSkill && SKILL_HANDLERS[activeSkill]) {
  * here rather than read from a field that was never written.
  */
 const pdcaStatus = getPdcaStatusFull();
-const feature = pdcaStatus?.primaryFeature || null;
+// br015b: bind the transition to the feature the fired skill targeted
+// (session.lastSkillFeature, written at fire time by skill-invocation-effects
+// step-6). Falls back to primaryFeature when no fire recorded a feature —
+// the old behavior that misbound every Stop to ZfeatA (foreign primary).
+// br290: a recording naming a DEAD feature (archived out of the registry) is
+// proof the cycle completed — bind to NOTHING, never fall through to
+// primaryFeature (the phantom-rebind defect behind the ZfeatA design-demand
+// Stop blocks).
+const { isDeadRecordedFeature } = require('../lib/pdca/stop-binding');
+const recordedFeature = pdcaStatus?.session?.lastSkillFeature;
+const recordedDead = isDeadRecordedFeature(recordedFeature, pdcaStatus?.features);
+
+/*
+ * Per-turn observability (token ledger + cc-regression events) must run on
+ * EVERY Stop, including early exits. The dead-record exit below used to fire
+ * before the accountant block at the end of the async body, so after a cycle
+ * archived (lastSkillFeature dead) every subsequent Stop silently stopped
+ * recording turns — caught by test/contract/integration-runtime.test.js
+ * locally (ledger stopped growing). Defined here, called at both exits.
+ * Best-effort — never blocks Stop flow.
+ */
+function recordTurnObservability() {
+  try {
+    const ccRegression = require('../lib/cc-regression');
+    const usage = (hookContext && hookContext.message && hookContext.message.usage) || {};
+    const ccVersionResolved = ccRegression.detectCCVersion() || process.env.CLAUDE_CODE_VERSION || 'unknown';
+    ccRegression.recordTurn({
+      // From stdin payload — env fallback prefers CLAUDE_CODE_SESSION_ID (#119)
+      sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '',
+      agent: activeAgent || 'main',
+      model: (hookContext.message && hookContext.message.model)
+        || process.env.CLAUDE_MODEL
+        || 'unknown',
+      ccVersion: ccVersionResolved,
+      turnIndex: Number.isFinite(hookContext.turn_index)
+        ? hookContext.turn_index
+        : parseInt(process.env.CLAUDE_TURN_INDEX || '0', 10),
+      inputTokens: Number.isFinite(usage.input_tokens) ? usage.input_tokens : 0,
+      outputTokens: Number.isFinite(usage.output_tokens) ? usage.output_tokens : 0,
+      cacheReadInputTokens: Number.isFinite(usage.cache_read_input_tokens) ? usage.cache_read_input_tokens : 0,
+      cacheCreationInputTokens: Number.isFinite(usage.cache_creation_input_tokens) ? usage.cache_creation_input_tokens : 0,
+      overheadDelta: parseInt(process.env.CLAUDE_OVERHEAD_DELTA || '0', 10),
+      parseStatus: (hookContext && hookContext.message) ? 'ok' : 'no_payload',
+      parseWarnings: (hookContext && hookContext.message)
+        ? null
+        : 'no message field in hookContext (env-fallback)',
+    });
+
+    // v2.1.10 Sprint 5.5: cc-regression attribution (NDJSON event log)
+    if (ccVersionResolved && ccVersionResolved !== 'unknown') {
+      ccRegression.recordEvent({
+        hookEvent: 'Stop',
+        ccVersion: ccVersionResolved,
+        sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || null,
+        timestamp: new Date().toISOString(),
+        context: { agent: activeAgent || 'main', skill: activeSkill || null },
+      });
+    }
+  } catch (e) {
+    debugLog('UnifiedStop', 'token-accountant recordTurn failed', { error: e.message });
+  }
+}
+
+/*
+ * br040: gates BEFORE any transition bookkeeping. Ledger still records via
+ * recordTurnObservability (defined above, runs on every Stop); on skip we
+ * approve the turn (exit 0) with no phase write and no directive.
+ */
+const autoTransitionGate = shouldSkipAutoTransition(hookContext);
+if (autoTransitionGate.skip) {
+  recordTurnObservability();
+  process.stderr.write(`[bkit] AUTO-TRANSITION withheld (gate: ${autoTransitionGate.gate})\n`);
+  debugLog('UnifiedStop', 'br040 AUTO-TRANSITION withheld', { gate: autoTransitionGate.gate });
+  process.exit(0);
+}
+
+if (recordedDead) {
+  // br290b: post-completion Stop — approve silently, nothing to advance.
+  recordTurnObservability();
+  process.exit(0);
+}
+const feature = recordedDead
+  ? null
+  : ((recordedFeature && pdcaStatus?.features?.[recordedFeature] && recordedFeature) ||
+     pdcaStatus?.primaryFeature ||
+     null);
 const featureEntry = feature ? pdcaStatus?.features?.[feature] : null;
 const currentPhase = featureEntry?.phase || null;
 const nextPhase = (() => {
@@ -366,7 +547,14 @@ if (feature && currentPhase) {
 
         // Write gate result to pdca-status for visibility
         const { updatePdcaStatus: updateStatus } = require('../lib/pdca/status');
-        updateStatus(feature, currentPhase, {
+        // br015b: the skill handler (spawned above) may have already advanced
+        // the phase (e.g. report -> completed) by the time this gate write
+        // runs. currentPhase is a pre-handler snapshot — writing it back
+        // regressed the freshly-written phase (observed: completed at .367Z
+        // reverted to report at .378Z). Read the live phase instead.
+        const liveStatus = getPdcaStatusFull(true);
+        const livePhase = liveStatus?.features?.[feature]?.phase || currentPhase;
+        updateStatus(feature, livePhase, {
           lastGateResult: {
             verdict: gateResult.verdict,
             score: gateResult.score,
@@ -536,8 +724,11 @@ if (feature && transitionSuccess) {
           te.recordEvent(verdict === 'pass' ? 'gate_pass' : 'gate_fail', { feature, matchRate });
         }
       }
-      // v2.1.1 TC-01: Sync trust score to control-state.json
-      te.syncToControlState();
+      // v2.1.1 TC-01: Sync trust score to control-state.json.
+      // br100: use the documented public API reconcile() — it internally
+      // delegates to syncToControlState() and adds trustScoreEnabled gating
+      // plus a structured result. The bare sync helper is the internal path.
+      te.reconcile({ trigger: 'unified-stop' });
       debugLog('UnifiedStop', 'v2.1.1 trust synced to control-state', { feature, currentPhase, nextPhase });
     }
   } catch (_) { /* non-critical */ }
@@ -746,53 +937,9 @@ if (!handled) {
   outputAllow(`Stop event processed.${trustInfo}${auditInfo}${copyTip}${nextActionHint}`, 'Stop');
 }
 
-// v2.1.12 Sprint A-1 (defect #17 fix): Record turn marker for ENH-264 per-turn
-// tracking. CC v2.1.x Stop hook does NOT inject CLAUDE_* env vars — all data is
-// in the stdin JSON payload (parsed into `hookContext` at line 244). Reading
-// from env vars produced 472/472 zero entries (CARRY-5 P0). Switched to
-// hookContext payload extraction per CC hook payload schema:
-//   { session_id, message: { model, usage: { input_tokens, output_tokens,
-//     cache_read_input_tokens, cache_creation_input_tokens } } }
-// Best-effort — never blocks Stop flow.
-try {
-  const ccRegression = require('../lib/cc-regression');
-  const usage = (hookContext && hookContext.message && hookContext.message.usage) || {};
-  const ccVersionResolved = ccRegression.detectCCVersion() || process.env.CLAUDE_CODE_VERSION || 'unknown';
-  ccRegression.recordTurn({
-    // From stdin payload — env fallback prefers CLAUDE_CODE_SESSION_ID (#119)
-    sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '',
-    agent: activeAgent || 'main',
-    model: (hookContext.message && hookContext.message.model)
-      || process.env.CLAUDE_MODEL
-      || 'unknown',
-    ccVersion: ccVersionResolved,
-    turnIndex: Number.isFinite(hookContext.turn_index)
-      ? hookContext.turn_index
-      : parseInt(process.env.CLAUDE_TURN_INDEX || '0', 10),
-    inputTokens: Number.isFinite(usage.input_tokens) ? usage.input_tokens : 0,
-    outputTokens: Number.isFinite(usage.output_tokens) ? usage.output_tokens : 0,
-    cacheReadInputTokens: Number.isFinite(usage.cache_read_input_tokens) ? usage.cache_read_input_tokens : 0,
-    cacheCreationInputTokens: Number.isFinite(usage.cache_creation_input_tokens) ? usage.cache_creation_input_tokens : 0,
-    overheadDelta: parseInt(process.env.CLAUDE_OVERHEAD_DELTA || '0', 10),
-    parseStatus: (hookContext && hookContext.message) ? 'ok' : 'no_payload',
-    parseWarnings: (hookContext && hookContext.message)
-      ? null
-      : 'no message field in hookContext (env-fallback)',
-  });
-
-  // v2.1.10 Sprint 5.5: cc-regression attribution (NDJSON event log)
-  if (ccVersionResolved && ccVersionResolved !== 'unknown') {
-    ccRegression.recordEvent({
-      hookEvent: 'Stop',
-      ccVersion: ccVersionResolved,
-      sessionId: hookContext.session_id || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || null,
-      timestamp: new Date().toISOString(),
-      context: { agent: activeAgent || 'main', skill: activeSkill || null },
-    });
-  }
-} catch (e) {
-  debugLog('UnifiedStop', 'token-accountant recordTurn failed', { error: e.message });
-}
+// v2.1.12 Sprint A-1 (defect #17 fix): per-turn observability — see
+// recordTurnObservability() above (hoisted so early exits also record).
+recordTurnObservability();
 
 debugLog('UnifiedStop', 'Hook completed', {
   handled,

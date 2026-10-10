@@ -10,19 +10,24 @@ const { detectLevel } = require('../../lib/pdca/level');
 const { debugLog } = require('../../lib/core/debug');
 const { getPdcaStatusFull } = require('../../lib/pdca/status');
 const { formatAskUserQuestion } = require('../../lib/pdca/automation');
-const { calculateAmbiguityScore } = require('../../lib/intent/ambiguity');
 const { getBkitConfig } = require('../../lib/core/config');
 
 /**
  * Detect current PDCA phase from status file
- * @returns {string} Phase number as string
+ * @returns {string|null} PDCA phase string of the active feature (e.g. 'design'),
+ *   or null when no active feature/phase exists
  */
+// br073: BKIT_PDCA_PHASE carries the PDCA phase string, not the pipeline counter
 function detectPdcaPhase() {
   const pdcaStatus = getPdcaStatusFull();
-  if (pdcaStatus && pdcaStatus.pipeline && pdcaStatus.pipeline.currentPhase) {
-    return String(pdcaStatus.pipeline.currentPhase);
+  if (pdcaStatus && Array.isArray(pdcaStatus.activeFeatures) && pdcaStatus.activeFeatures.length > 0) {
+    const primary = pdcaStatus.primaryFeature;
+    const featureData = pdcaStatus.features && pdcaStatus.features[primary];
+    if (featureData && typeof featureData.phase === 'string' && featureData.phase) {
+      return featureData.phase;
+    }
   }
-  return '1';
+  return null;
 }
 
 /**
@@ -103,48 +108,6 @@ function enhancedOnboarding() {
 }
 
 /**
- * Analyze user request for ambiguity and generate clarifying questions.
- * @param {string} userRequest - User's request text
- * @param {object} context - Current context (features, phase, etc.)
- * @returns {object|null} Ambiguity analysis result or null if clear
- */
-function analyzeRequestAmbiguity(userRequest, context = {}) {
-  if (!userRequest || userRequest.length < 10) {
-    return null;
-  }
-
-  const ambiguityResult = calculateAmbiguityScore(userRequest, context);
-
-  debugLog('SessionStart', 'Ambiguity analysis', {
-    score: ambiguityResult.score,
-    factorsCount: ambiguityResult.factors.length,
-    needsClarification: ambiguityResult.score >= 50
-  });
-
-  if (ambiguityResult.score >= 50 && ambiguityResult.clarifyingQuestions) {
-    return {
-      needsClarification: true,
-      score: ambiguityResult.score,
-      factors: ambiguityResult.factors,
-      questions: ambiguityResult.clarifyingQuestions,
-      // v2.1.1 H-01: Use formatAskUserQuestion for ambiguity clarification
-      userPrompt: JSON.stringify(formatAskUserQuestion({
-        question: ambiguityResult.clarifyingQuestions[0],
-        header: 'Clarify',
-        options: [
-          { label: 'Yes, correct', description: 'This interpretation is correct' },
-          { label: 'No', description: 'Please interpret differently' },
-          { label: 'More details', description: 'I will explain in more detail' }
-        ],
-        multiSelect: false
-      }))
-    };
-  }
-
-  return null;
-}
-
-/**
  * Generate trigger keyword reference table.
  * @returns {string} Formatted trigger keyword table
  */
@@ -188,10 +151,13 @@ function persistEnvVars() {
   const envFile = process.env.CLAUDE_ENV_FILE;
   if (envFile) {
     const detectedLevel = detectLevel();
-    const detectedPhase = detectPdcaPhase();
+    const detectedPhase = detectPdcaPhase(); // br073: null when no active feature
     try {
       fs.appendFileSync(envFile, `export BKIT_LEVEL=${detectedLevel}\n`);
-      fs.appendFileSync(envFile, `export BKIT_PDCA_PHASE=${detectedPhase}\n`);
+      // br073: only export BKIT_PDCA_PHASE when an active feature phase exists
+      if (detectedPhase) {
+        fs.appendFileSync(envFile, `export BKIT_PDCA_PHASE=${detectedPhase}\n`);
+      }
       fs.appendFileSync(envFile, `export BKIT_PLATFORM=claude\n`);
     } catch (e) {
       // Ignore write errors
@@ -217,4 +183,4 @@ function run(_input) {
   };
 }
 
-module.exports = { run, analyzeRequestAmbiguity, detectPdcaPhase };
+module.exports = { run, detectPdcaPhase };

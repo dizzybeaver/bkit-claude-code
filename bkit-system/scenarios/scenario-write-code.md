@@ -65,7 +65,7 @@ User: "Modify login.ts file"
 │  5. PostToolUse Hooks Execute                                    │
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ [[../../skills/bkit-rules/SKILL|bkit-rules]] → pdca-post-write.js│   │
+│  │ [[../../skills/bkit-rules/SKILL|bkit-rules]] → unified-write-post.js│   │
 │  │ • If design doc exists: "/pdca-analyze recommended" guidance│
 │  └─────────────────────────────────────────────────────────┘   │
 │                              │                                  │
@@ -74,7 +74,7 @@ User: "Modify login.ts file"
 │  │ Detected: .tsx, .jsx, .vue, .svelte (is_ui_file)        │   │
 │  │                                                          │   │
 │  │ [[../../skills/phase-5-design-system/SKILL|phase-5-design-system]]          │   │
-│  │ → phase5-design-post.js                                  │   │
+│  │ → (phase5-design-post.js removed — consolidated)         │   │
 │  │ • Hardcoded color check                                  │   │
 │  │ • Design token usage recommendation                      │   │
 │  └─────────────────────────────────────────────────────────┘   │
@@ -82,7 +82,7 @@ User: "Modify login.ts file"
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ (If UI file or pages/components/features path)           │   │
 │  │ [[../../skills/phase-6-ui-integration/SKILL|phase-6-ui-integration]]         │   │
-│  │ → phase6-ui-post.js                                      │   │
+│  │ → (phase6-ui-post.js removed — consolidated)              │   │
 │  │ • UI layer separation verification                       │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -131,7 +131,7 @@ PDCA documentation is essential.
 
 ### PostToolUse Result
 
-**bkit-rules (pdca-post-write.js)**:
+**bkit-rules (unified-write-post.js)**:
 ```
 Write completed: src/features/auth/login.ts
 
@@ -139,7 +139,7 @@ When implementation is finished, run /pdca-analyze auth to verify
 design-implementation alignment.
 ```
 
-**phase-6-ui-integration (phase6-ui-post.js)**:
+**phase-6-ui-integration** (post-write hook `phase6-ui-post.js` REMOVED — verification now skill-dispatched):
 ```
 🔍 UI Layer Check:
 - Components should use hooks, not direct fetch
@@ -155,10 +155,10 @@ design-implementation alignment.
 
 | File Extension | Fired Hooks |
 |----------------|-------------|
-| `.tsx`, `.jsx` | pre-write (unified), pdca-post-write, phase-5-design, phase-6-ui |
-| `.vue`, `.svelte` | pre-write (unified), pdca-post-write, phase-5-design, phase-6-ui |
-| `.ts`, `.js` | pre-write (unified), pdca-post-write |
-| `.py`, `.go`, `.rs` | pre-write (unified), pdca-post-write |
+| `.tsx`, `.jsx` | pre-write (unified), unified-write-post, phase-5-design, phase-6-ui |
+| `.vue`, `.svelte` | pre-write (unified), unified-write-post, phase-5-design, phase-6-ui |
+| `.ts`, `.js` | pre-write (unified), unified-write-post |
+| `.py`, `.go`, `.rs` | pre-write (unified), unified-write-post |
 | `.md` | design-validator (if design document) |
 
 ### Path-Based Detection

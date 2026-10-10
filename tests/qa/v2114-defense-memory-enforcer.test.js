@@ -118,11 +118,11 @@ test('EN-05: enforce checks file_path field', () => {
   assert.equal(r.allowed, false);
 });
 
-test('EN-06: enforce checks content field', () => {
+test('EN-06: enforce ignores content field (br105)', () => {
   const d = me.extractDirectives('Do NOT include secret tokens');
-  // Conservative substring matching: directive text must appear verbatim.
+  // br105: directive text in content is quotation, not execution — content is excluded from the match haystack (see lib/defense/memory-enforcer.js enforce()). Denial for command/args still covered by EN-07.
   const r = me.enforce({ tool: 'Write', content: 'config should not include secret tokens here' }, d);
-  assert.equal(r.allowed, false);
+  assert.equal(r.allowed, true);
 });
 
 test('EN-07: enforce checks args object string values', () => {

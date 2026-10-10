@@ -30,7 +30,7 @@ const { TRANSITIONS, STATES, EVENTS, GUARDS, findTransition, canTransition, getA
 // --- SM-001~020: 20 transitions each verified (from -> event -> to) ---
 
 // Verify all 20 transition entries exist in the table
-assert('SM-001', TRANSITIONS.length === 25, `TRANSITIONS has 25 entries (got ${TRANSITIONS.length})`);
+assert('SM-001', TRANSITIONS.length === 23, `TRANSITIONS has 23 entries (got ${TRANSITIONS.length})`); // br035: TIMEOUT/ABANDON edges removed
 
 // Normal forward flow transitions
 const t1 = findTransition('idle', 'START');
@@ -89,11 +89,13 @@ assert('SM-018', t17 !== null && t17.to === 'idle', '(any) + RESET -> idle');
 const t18 = findTransition('design', 'ROLLBACK');
 assert('SM-019', t18 !== null && t18.to === '*', '(any) + ROLLBACK -> * (dynamic)');
 
+// br035: TIMEOUT/ABANDON archive edges removed (dead code — stale cleanup is
+// owned by lifecycle.cleanupStaleFeatures). The edges must stay gone.
 const t19 = findTransition('do', 'TIMEOUT');
-assert('SM-020', t19 !== null && t19.to === 'archived', '(any) + TIMEOUT -> archived');
+assert('SM-020', t19 === null, 'TIMEOUT edge removed (br035)');
 
 const t20 = findTransition('check', 'ABANDON');
-assert('SM-021', t20 !== null && t20.to === 'archived', '(any) + ABANDON -> archived');
+assert('SM-021', t20 === null, 'ABANDON edge removed (br035)');
 
 // --- SM-021~025: Guards ---
 
@@ -144,16 +146,7 @@ assert('SM-025', typeof GUARDS.guardCanIterate === 'function', 'guardCanIterate 
   assert('SM-029', notMaxReached === false, 'guardMaxIterReached false when iterations < max');
 }
 
-{
-  const stale = GUARDS.guardStaleFeature({
-    timestamps: {
-      lastUpdated: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  });
-  assert('SM-030', stale === true, 'guardStaleFeature true for 8-day-old feature');
-}
-
-// --- SM-026~030: canTransition() valid/invalid paths ---
+// --- SM-026~029: canTransition() valid/invalid paths (SM-030 removed: guardStaleFeature deleted per br061) ---
 
 assert('SM-031', canTransition('idle', 'START') === true, 'canTransition idle+START = true');
 assert('SM-032', canTransition('idle', 'SKIP_PM') === true, 'canTransition idle+SKIP_PM = true');
@@ -194,7 +187,7 @@ assert('SM-035', canTransition('do', 'RESET') === true, 'canTransition do+RESET 
 // --- SM-039~040: Structural checks ---
 
 assert('SM-041', Array.isArray(STATES) && STATES.length === 11, `STATES has 11 entries (got ${STATES.length})`);
-assert('SM-042', Array.isArray(EVENTS) && EVENTS.length === 22, `EVENTS has 22 entries (got ${EVENTS.length})`);
+assert('SM-042', Array.isArray(EVENTS) && EVENTS.length === 20, `EVENTS has 20 entries (got ${EVENTS.length})`); // br035: TIMEOUT/ABANDON removed
 
 // Verify STATES includes key phases
 assert('SM-043', STATES.includes('idle') && STATES.includes('pm') && STATES.includes('plan'), 'STATES includes idle, pm, plan');

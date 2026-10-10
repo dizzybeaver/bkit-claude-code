@@ -54,7 +54,7 @@ User: "/zero-script-qa" or "Run QA"
 │  5. PreToolUse Hook on Bash Execution                            │
 │                                                                 │
 │  [[../../skills/zero-script-qa/SKILL|zero-script-qa]]                       │
-│  → qa-pre-bash.js                                               │
+│  → unified-bash-pre.js                                               │
 │                                                                 │
 │  • Check destructive commands (rm -rf, DROP, etc.)              │
 │  • If found → Block                                             │
@@ -87,7 +87,7 @@ User: "/zero-script-qa" or "Run QA"
 │  8. PostToolUse Hook (After Report Creation)                     │
 │                                                                 │
 │  [[../../agents/qa-monitor|qa-monitor]]                             │
-│  → qa-monitor-post.js                                           │
+│  → (qa-monitor-post.js removed — QA notification now in unified-write-post chain)                                           │
 │                                                                 │
 │  • If critical issues:                                          │
 │    "🚨 Critical issues detected!"                               │
@@ -175,15 +175,15 @@ Run /pdca-iterate for auto-fix?
 
 | Timing | Hook | Script | Action |
 |--------|------|--------|--------|
-| Before Bash execution | PreToolUse | qa-pre-bash.js | Block destructive commands |
-| After report Write | PostToolUse | qa-monitor-post.js | Critical issue notification |
+| Before Bash execution | PreToolUse | unified-bash-pre.js | Block destructive commands |
+| After report Write | PostToolUse | (qa-monitor-post.js removed — QA notification now in unified-write-post chain) | Critical issue notification |
 | On QA session end | Stop | qa-stop.js | Next steps guidance |
 
 ---
 
 ## Destructive Command Block List
 
-Patterns blocked by `qa-pre-bash.js`:
+Patterns blocked by `unified-bash-pre.js`:
 
 ```bash
 - rm -rf
@@ -206,7 +206,7 @@ Patterns blocked by `qa-pre-bash.js`:
 - [ ] Verify guidance message when docker compose is not running
 - [ ] Verify destructive command blocking (test with rm -rf)
 - [ ] Verify immediate report on ERROR log detection
-- [ ] Verify qa-monitor-post.js fires after report creation
+- [ ] Verify (qa-monitor-post.js removed — QA notification now in unified-write-post chain) fires after report creation
 - [ ] Verify /pdca-iterate recommendation when critical issues exist
 - [ ] Verify qa-stop.js fires on session end
 
@@ -227,4 +227,4 @@ For team-based QA execution, CTO-Led Agent Teams can parallelize QA:
 - [[scenario-new-feature]] - New feature request scenario
 - [[../../skills/zero-script-qa/SKILL|zero-script-qa]] - Zero Script QA skill
 - [[../../agents/qa-monitor|qa-monitor]] - QA Monitor agent
-- [[../components/scripts/_scripts-overview]] - qa-pre-bash.js
+- [[../components/scripts/_scripts-overview]] - unified-bash-pre.js

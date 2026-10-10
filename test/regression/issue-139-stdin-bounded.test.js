@@ -40,6 +40,7 @@ const path = require('node:path');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const IO = path.join(REPO, 'lib', 'core', 'io.js');
+const READERS = path.join(REPO, 'lib', 'core', '_io', 'readers.js');
 const STATE_STORE = path.join(REPO, 'lib', 'core', 'state-store.js');
 const UNIFIED_STOP = path.join(REPO, 'scripts', 'unified-stop.js');
 
@@ -225,14 +226,18 @@ const BOUNDED_HARNESS =
   // Guards run against comment-stripped source so the doc comments that
   // intentionally name the old anti-patterns don't produce false positives.
   {
+    // Since br050 the stdin readers live in lib/core/_io/readers.js; io.js is a
+    // wrapper re-export. Guards run against both: the reader source for the
+    // mechanism, the wrapper for the public surface.
     const ioSrc = stripComments(fs.readFileSync(IO, 'utf8'));
-    tc('io.js no longer uses the unbounded fs.readFileSync(0)',
-      !/readFileSync\(\s*0\b/.test(ioSrc),
-      'found fs.readFileSync(0 ...) in lib/core/io.js (code)');
-    tc('io.js reads stdin incrementally via fs.readSync (parse-early)',
-      /fs\.readSync\(\s*0\b/.test(ioSrc),
-      'expected fs.readSync(0, ...) in lib/core/io.js');
-    tc('io.js exports readStdinBounded',
+    const readersSrc = stripComments(fs.readFileSync(READERS, 'utf8'));
+    tc('readers.js no longer uses the unbounded fs.readFileSync(0)',
+      !/readFileSync\(\s*0\b/.test(readersSrc),
+      'found fs.readFileSync(0 ...) in lib/core/_io/readers.js (code)');
+    tc('readers.js reads stdin incrementally via fs.readSync (parse-early)',
+      /fs\.readSync\(\s*0\b/.test(readersSrc),
+      'expected fs.readSync(0, ...) in lib/core/_io/readers.js');
+    tc('io.js wrapper still re-exports readStdinBounded',
       /readStdinBounded/.test(ioSrc),
       'expected readStdinBounded in lib/core/io.js');
 

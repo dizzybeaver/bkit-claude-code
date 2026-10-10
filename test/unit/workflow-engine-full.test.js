@@ -156,12 +156,27 @@ test('TC-14', 'getWorkflowStatus returns status for saved feature', () => {
     context: { matchRate: 50 },
   };
   workflowEngine.saveWorkflowState('status-feat', execution, tmpDir);
+  // br064: without a workflowDef, progress is omitted rather than fabricated
   const status = workflowEngine.getWorkflowStatus('status-feat', tmpDir);
   assert.ok(status !== null);
   assert.strictEqual(status.currentStep, 'plan');
   assert.ok(Array.isArray(status.completedSteps));
-  assert.strictEqual(typeof status.progress, 'number');
+  assert.strictEqual(status.progress, undefined);
+  assert.ok(!('progress' in status));
   assert.strictEqual(status.status, 'running');
+
+  // br064: with a workflowDef, progress = round(completed/total*100), clamped to 99
+  const def = { steps: { start: {}, plan: {}, do: {}, check: {} } };
+  const statusWithDef = workflowEngine.getWorkflowStatus('status-feat', tmpDir, def);
+  assert.ok(statusWithDef !== null);
+  assert.strictEqual(statusWithDef.progress, 25); // 1/4 completed
+  assert.strictEqual(statusWithDef.status, 'running');
+
+  // completed status still reports 100 regardless of def
+  const done = { ...execution, status: 'completed', completedSteps: ['start', 'plan', 'do', 'check'] };
+  workflowEngine.saveWorkflowState('status-feat-done', done, tmpDir);
+  const doneStatus = workflowEngine.getWorkflowStatus('status-feat-done', tmpDir);
+  assert.strictEqual(doneStatus.progress, 100);
 });
 
 // TC-15: getWorkflowStatus — returns null for missing feature

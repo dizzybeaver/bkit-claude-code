@@ -102,6 +102,12 @@ fs.writeFileSync(transcriptPath, [
   '',
 ].join('\n'));
 
+// br043 guard: readHookText only reads transcripts under ~/.claude/projects or
+// CLAUDE_PROJECT_DIR/cwd — point the env at this test's tmpDir so the fixture
+// is permitted, and restore the caller's value after the block.
+const prevClaudeProjectDir = process.env.CLAUDE_PROJECT_DIR;
+process.env.CLAUDE_PROJECT_DIR = tmpDir;
+
 const resolved = io.readHookText({ ...ENVELOPE, transcript_path: transcriptPath });
 
 assert('SE-010', matchRatePattern.test(resolved) && resolved.match(matchRatePattern)[2] === '87',
@@ -114,6 +120,11 @@ assert('SE-012', actionPattern.test(resolved) &&
 assert('SE-013', !/Match Rate: 3%/.test(resolved),
   'The thinking block cannot supply a competing match rate');
 
+if (prevClaudeProjectDir === undefined) {
+  delete process.env.CLAUDE_PROJECT_DIR;
+} else {
+  process.env.CLAUDE_PROJECT_DIR = prevClaudeProjectDir;
+}
 fs.rmSync(tmpDir, { recursive: true, force: true });
 
 // --- G-2: unmeasured stays unmeasured through the iterator ---
@@ -161,7 +172,18 @@ HANDLERS.forEach((rel, i) => {
 HANDLERS.forEach((rel, i) => {
   const src = read(rel);
   const n = String(i + 26).padStart(3, '0');
-  assert(`SE-${n}`, /if \(require\.main !== module\) \{ module\.exports = \{\}; return; \}/.test(src),
+  /*
+   * SE-026 amendment (fix-br-report-strand-wave): gap-detector-stop.js no
+   * longer uses the literal `{ module.exports = {}; return; }` form. Since
+   * bugfix-wave-20260919 §3 Fix 4 (d2f5fa5) it exports its PURE HELPERS on
+   * the require path (`module.exports = { parseMatchRate, ... }`) and runs
+   * the hook body in an else-branch — that is why test/unit/
+   * gap-detector-stop-parsing.test.js can require it at all. The guard's
+   * contract is "require() must not execute the hook body", and both forms
+   * satisfy it; what the regression must never let drift away is the
+   * `require.main !== module` fork itself.
+   */
+  assert(`SE-${n}`, /if \(require\.main !== module\)/.test(src),
     `${path.basename(rel)} keeps its bare-require guard`);
 });
 

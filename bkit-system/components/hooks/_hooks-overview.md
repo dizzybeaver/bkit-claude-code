@@ -107,7 +107,7 @@ Hooks are the core of bkit's **context injection system**, organized into 6 laye
 │  │ PreToolUse (Write|Edit)       │                                  │
 │  │   └─ pre-write.js             │      agents/*.md (Local)         │
 │  │ PostToolUse (Write)           │      ┌─────────────────────┐     │
-│  │   └─ pdca-post-write.js       │      │ PreToolUse          │     │
+│  │   └─ unified-write-post.js       │      │ PreToolUse          │     │
 │  │ PreCompact (v1.4.2)           │      │ PostToolUse         │     │
 │  │   └─ context-compaction.js    │      │ context: fork       │     │
 │  └───────────────────────────────┘      └─────────────────────┘     │
@@ -151,7 +151,7 @@ Global hooks are defined in `hooks/hooks.json` (v1.4.4 includes 6 hook events wi
       {
         "matcher": "Write",
         "hooks": [
-          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/pdca-post-write.js", "timeout": 5000 }
+          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/unified-write-post.js", "timeout": 5000 }
         ]
       }
     ],
@@ -263,7 +263,7 @@ Global hooks are defined in `hooks/hooks.json` (v1.4.4 includes 6 hook events wi
 
 | Matcher | Script | Purpose |
 |---------|--------|---------|
-| `Write` | `scripts/pdca-post-write.js` | Guide next steps after file write |
+| `Write` | `scripts/unified-write-post.js` | Guide next steps after file write |
 
 **Usage**:
 - Post-operation guidance
@@ -333,7 +333,7 @@ PreToolUse (Write|Edit)
     │
     ▼
 PostToolUse (Write)
-    └─ pdca-post-write.js
+    └─ unified-write-post.js
         ├─ Extract feature name
         └─ Suggest gap analysis
     │
@@ -348,16 +348,16 @@ PreCompact (when context limit reached) (v1.4.2)
 
 | Hook | Script | Dependencies |
 |------|--------|--------------|
-| SessionStart | `session-start.js` | `lib/common.js` (→ `lib/core/`, `lib/pdca/`, `lib/intent/`) |
-| UserPromptSubmit | `user-prompt-handler.js` | `lib/common.js` (→ `lib/intent/`) |
-| PreToolUse | `pre-write.js` | `lib/common.js` (→ `lib/pdca/`, `lib/task/`) |
-| PostToolUse | `pdca-post-write.js` | `lib/common.js` (→ `lib/pdca/`) |
-| PreCompact | `context-compaction.js` | `lib/common.js` (→ `lib/pdca/`) |
-| Stop (gap-detector) | `gap-detector-stop.js` | `lib/common.js` (→ `lib/task/`) |
-| Stop (iterator) | `iterator-stop.js` | `lib/common.js` (→ `lib/task/`) |
-| Stop (pdca-skill) | `pdca-skill-stop.js` | `lib/common.js` (→ `lib/task/`) |
+| SessionStart | `session-start.js` | `lib/core/`, `lib/pdca/`, `lib/intent/` (direct; `lib/common.js` bridge removed in v2.x restructure) |
+| UserPromptSubmit | `user-prompt-handler.js` | `lib/intent/` (direct) |
+| PreToolUse | `pre-write.js` | `lib/pdca/`, `lib/task/`, `lib/core/` (direct) |
+| PostToolUse | `unified-write-post.js` | `lib/pdca/` (direct) |
+| PreCompact | `context-compaction.js` | `lib/core/`, `lib/pdca/` (direct) |
+| Stop (gap-detector) | `gap-detector-stop.js` | `lib/task/` (direct) |
+| Stop (iterator) | `iterator-stop.js` | `lib/task/` (direct) |
+| Stop (pdca-skill) | `pdca-skill-stop.js` | `lib/task/`, `lib/pdca/` (direct) |
 
-**Note (v1.4.7)**: `lib/common.js` acts as Migration Bridge, re-exporting all modules for backward compatibility.
+**Note**: the v1.4.7 `lib/common.js` Migration Bridge (re-exporting all modules) was REMOVED in the v2.x lib/ restructure — hooks now require `lib/core/`, `lib/control/`, `lib/pdca/`, `lib/task/` modules directly.
 
 ## Additional Scripts (Not in hooks.json)
 
@@ -383,7 +383,7 @@ These scripts are available for skill frontmatter hooks or manual use:
 
 | Script | Event | Purpose |
 |--------|-------|---------|
-| `qa-pre-bash.js` | PreToolUse | QA setup before Bash |
+| `unified-bash-pre.js` | PreToolUse | QA setup before Bash |
 | `qa-monitor-post.js` | PostToolUse | QA completion guidance |
 | `qa-stop.js` | Stop | QA session cleanup |
 
@@ -396,7 +396,7 @@ These scripts are available for skill frontmatter hooks or manual use:
 | `iterator-stop.js` | Stop | pdca-iterator | Check-Act iteration: triggerNextPdcaAction (v1.4.7) |
 | `pdca-skill-stop.js` | Stop | pdca skill | Task Chain Auto-Creation (v1.4.7) |
 | `analysis-stop.js` | Stop | code-analyzer | Analysis completion guidance |
-| `qa-pre-bash.js` | PreToolUse | qa-monitor | Block destructive commands |
+| `unified-bash-pre.js` | PreToolUse | qa-monitor | Block destructive commands |
 | `qa-monitor-post.js` | PostToolUse | qa-monitor | Critical issue notification |
 | `qa-stop.js` | Stop | qa-monitor | QA session cleanup |
 
@@ -408,7 +408,8 @@ These scripts are available for skill frontmatter hooks or manual use:
 
 ```javascript
 #!/usr/bin/env node
-const { readStdinSync, parseHookInput, outputAllow, outputBlock } = require('../lib/common.js');
+// v2.x: bridge removed; helpers come from lib/core modules, e.g.
+const { readJsonStdin } = require('../lib/core/io');
 
 // Read JSON input from stdin
 const input = readStdinSync();
@@ -429,7 +430,7 @@ if (condition) {
 3. `reason` required when `block`
 4. `additionalContext` is passed to Claude
 
-### Helper Functions (lib/common.js)
+### Helper Functions (was lib/common.js — now split into lib/core/)
 
 ```javascript
 outputAllow("message")   // Allow with context

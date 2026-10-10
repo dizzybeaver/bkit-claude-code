@@ -13,6 +13,7 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const cp = require('child_process');
 
@@ -44,39 +45,75 @@ function assertFalse(cond, msg) { if (cond) throw new Error(msg || 'expected fal
 // ── L1 Unit (18) ────────────────────────────────────────────────────────
 console.log('\n=== L1 Unit Tests ===');
 
+// br045 sandbox: this group used to drive the REAL .bkit/runtime/control-state.json
+// on every setLevel. Redirect the controller to a throwaway CLAUDE_PROJECT_DIR so
+// the suite never mutates live runtime state; the redirection + non-mutation are
+// themselves asserted below (L1-005 / L1-006).
+function purge(re) {
+  Object.keys(require.cache).forEach(k => { if (re.test(k)) delete require.cache[k]; });
+}
+// br045 fix: the purge MUST include the lib/core/index.js BARREL key. getCore()
+// memoizes require('../core'), and a barrel loaded before the sandbox pins a
+// platform instance whose PROJECT_DIR was resolved from the then-current env —
+// purging platform/cache/config alone leaves that stale barrel holding the real
+// state path. Purging the whole lib/core/ subtree detaches every reference.
+const CTRL_PURGE = /lib\/(core\/|control\/automation-controller)/;
+const realStatePath = path.join(ROOT, '.bkit/runtime/control-state.json');
+let realStateBefore = null;
+try { realStateBefore = fs.readFileSync(realStatePath, 'utf8'); } catch (_) { /* fresh checkout: no state file yet */ }
+const savedProjectDir = process.env.CLAUDE_PROJECT_DIR;
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2112-sandbox-'));
+let sandboxed;
+try {
+  process.env.CLAUDE_PROJECT_DIR = tmpDir;
+  purge(CTRL_PURGE);
+  sandboxed = require(path.join(ROOT, 'lib/control/automation-controller'));
+
+  tc('L1-001', 'setLevel(0) updates currentLevel to 0', () => {
+    sandboxed.setLevel(0, { reason: 'L1-001 test', setBy: 'test' });
+    assertEq(sandboxed.getCurrentLevel(), 0, 'getCurrentLevel must return 0 after setLevel(0)');
+  });
+  tc('L1-002', 'setLevel(0) writes levelCode AND currentLevel atomically', () => {
+    sandboxed.setLevel(0, { reason: 'L1-002 test', setBy: 'test' });
+    const j = JSON.parse(fs.readFileSync(path.join(tmpDir, '.bkit/runtime/control-state.json'), 'utf8'));
+    assertEq(j.currentLevel, 0);
+    assertEq(j.levelCode, 0, '#11 fix: levelCode must equal currentLevel');
+    assertEq(j.level, 'manual', '#11 fix: level (string) must reflect numLevel');
+  });
+  tc('L1-003', 'setLevel roundtrip across all 5 levels', () => {
+    for (let n = 0; n <= 4; n++) {
+      sandboxed.setLevel(n, { reason: 'L1-003 test', setBy: 'test' });
+      assertEq(sandboxed.getCurrentLevel(), n, `setLevel(${n}) roundtrip`);
+    }
+  });
+  tc('L1-004', 'resolveAction(bash_destructive) at L4 returns auto/allow', () => {
+    sandboxed.setLevel(4, { reason: 'L1-004 test', setBy: 'test' });
+    const r = sandboxed.resolveAction('bash_destructive');
+    assertTrue(['auto', 'allow'].includes(r), `expected auto/allow at L4, got ${r}`);
+  });
+
+  // br045 redirection proof: writes landed in the sandbox; real state untouched.
+  tc('L1-005', 'setLevel redirected to sandbox temp dir (br045)', () => {
+    assertTrue(fs.existsSync(path.join(tmpDir, '.bkit/runtime/control-state.json')),
+      'sandbox control-state.json must exist after the group');
+  });
+  tc('L1-006', 'real .bkit/runtime/control-state.json untouched (br045)', () => {
+    if (realStateBefore === null) {
+      assertFalse(fs.existsSync(realStatePath), 'real state file must stay absent');
+    } else {
+      assertEq(fs.readFileSync(realStatePath, 'utf8'), realStateBefore,
+        'real state file must be byte-identical after the sandbox group');
+    }
+  });
+} finally {
+  if (savedProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = savedProjectDir;
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  purge(CTRL_PURGE); // later suites must re-require the REAL controller
+}
+
+// br045: module-level REAL controller for uses outside the sandbox group
+// (L2-001 drives + restores the real file by design, with its own save/restore).
 const ctrl = require(path.join(ROOT, 'lib/control/automation-controller'));
-tc('L1-001', 'setLevel(0) updates currentLevel to 0', () => {
-  // Save current setBy to restore later
-  const before = JSON.parse(fs.readFileSync(path.join(ROOT, '.bkit/runtime/control-state.json'), 'utf8'));
-  ctrl.setLevel(0, { reason: 'L1-001 test', setBy: 'test' });
-  assertEq(ctrl.getCurrentLevel(), 0, 'getCurrentLevel must return 0 after setLevel(0)');
-  // restore
-  ctrl.setLevel(before.currentLevel, { reason: 'L1-001 restore', setBy: before.setBy || 'runtime' });
-});
-tc('L1-002', 'setLevel(0) writes levelCode AND currentLevel atomically', () => {
-  const before = JSON.parse(fs.readFileSync(path.join(ROOT, '.bkit/runtime/control-state.json'), 'utf8'));
-  ctrl.setLevel(0, { reason: 'L1-002 test', setBy: 'test' });
-  const j = JSON.parse(fs.readFileSync(path.join(ROOT, '.bkit/runtime/control-state.json'), 'utf8'));
-  assertEq(j.currentLevel, 0);
-  assertEq(j.levelCode, 0, '#11 fix: levelCode must equal currentLevel');
-  assertEq(j.level, 'manual', '#11 fix: level (string) must reflect numLevel');
-  ctrl.setLevel(before.currentLevel, { reason: 'L1-002 restore', setBy: before.setBy || 'runtime' });
-});
-tc('L1-003', 'setLevel roundtrip across all 5 levels', () => {
-  const before = JSON.parse(fs.readFileSync(path.join(ROOT, '.bkit/runtime/control-state.json'), 'utf8'));
-  for (let n = 0; n <= 4; n++) {
-    ctrl.setLevel(n, { reason: 'L1-003 test', setBy: 'test' });
-    assertEq(ctrl.getCurrentLevel(), n, `setLevel(${n}) roundtrip`);
-  }
-  ctrl.setLevel(before.currentLevel, { reason: 'L1-003 restore', setBy: before.setBy || 'runtime' });
-});
-tc('L1-004', 'resolveAction(bash_destructive) at L4 returns auto/allow', () => {
-  const before = JSON.parse(fs.readFileSync(path.join(ROOT, '.bkit/runtime/control-state.json'), 'utf8'));
-  ctrl.setLevel(4, { reason: 'L1-004 test', setBy: 'test' });
-  const r = ctrl.resolveAction('bash_destructive');
-  assertTrue(['auto', 'allow'].includes(r), `expected auto/allow at L4, got ${r}`);
-  ctrl.setLevel(before.currentLevel, { reason: 'L1-004 restore', setBy: before.setBy || 'runtime' });
-});
 
 const runnerWrapper = require(path.join(ROOT, 'lib/evals/runner-wrapper'));
 tc('L1-007', '_extractTrailingJson — pure JSON', () => {
@@ -197,13 +234,32 @@ tc('L2-004', 'gap-detector-stop bare-require emits no stdout (#9)', () => {
   const r = cp.spawnSync('node', ['-e', "const m = require('./scripts/gap-detector-stop'); console.log(JSON.stringify(m));"], {
     cwd: ROOT, encoding: 'utf8', timeout: 5000,
   });
-  assertEq(r.stdout.trim(), '{}', `expected {} bare-require output, got: ${r.stdout.slice(0, 80)}`);
+  // Dual-mode contract (v2.1.40, rb002): bare-require exports the shared
+  // helpers and prints NOTHING at require time — stdout must parse as exactly
+  // that one JSON object. (The old `=== '{}'` expectation encoded the
+  // pre-dual-mode contract and went stale when matchRatePattern was exported.)
+  let parsed = null;
+  try { parsed = JSON.parse(r.stdout.trim()); } catch { parsed = null; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    assertEq('(clean JSON exports)', r.stdout.slice(0, 80), 'bare-require emitted stdout noise');
+  }
+  // JSON.stringify drops function exports; matchRatePattern (RegExp → {}) is
+  // the one JSON-visible key proving the dual-mode export surface is live.
+  assertEq('matchRatePattern' in parsed, true);
 });
 tc('L2-006', 'pdca-skill-stop bare-require emits no stdout (#10)', () => {
   const r = cp.spawnSync('node', ['-e', "const m = require('./scripts/pdca-skill-stop'); console.log(JSON.stringify(m));"], {
     cwd: ROOT, encoding: 'utf8', timeout: 5000,
   });
-  assertEq(r.stdout.trim(), '{}');
+  // Dual-mode contract (br014): bare-require exports the envelope helpers and
+  // prints NOTHING at require time — stdout must parse as exactly that one
+  // JSON object. (Old `=== '{}'` encoded the pre-dual-mode contract.)
+  let parsed = null;
+  try { parsed = JSON.parse(r.stdout.trim()); } catch { parsed = null; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    assertEq('(clean JSON exports)', r.stdout.slice(0, 80), 'bare-require emitted stdout noise');
+  }
+  assertEq(Array.isArray(parsed.ENVELOPE_ACTIONS), true);
 });
 
 tc('L2-008', 'createCheckpoint → verifyCheckpoint roundtrip (#12)', () => {

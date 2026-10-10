@@ -11,20 +11,249 @@
  */
 
 
-// v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
-// is require()-d instead of executed as a hook entrypoint, return
-// immediately so no stale stdout (decisions, advisory messages) is emitted
-// without a real hook payload. CommonJS module body is implicitly an IIFE,
-// so top-level return is valid.
-if (require.main !== module) { module.exports = {}; return; }
-
 const fs = require('fs');
 const path = require('path');
+
+// ============================================================
+// Envelope derivation (br014, fix-br013-014-wave D2) — pure helpers
+// factored out of the main flow so unit tests can require them without
+// executing the hook.
+//
+// The action used to be scraped from turn TEXT alone; a live report-phase
+// turn whose prose never said "pdca report" missed the report→completed
+// advance. Ground truth is the transcript's most recent pdca Skill
+// tool_use: {name:'Skill', input:{skill:'bkit:pdca', args:'report fix-x'}}.
+// ============================================================
+
+// Valid first tokens of a pdca skill invocation (superset of actionPattern,
+// br010 check alias included).
+const ENVELOPE_ACTIONS = [
+  'pm', 'plan', 'design', 'do', 'analyze', 'check', 'iterate', 'qa',
+  'report', 'status', 'next',
+];
+
+/** True for skill names 'pdca' and 'bkit:pdca' (any plugin prefix). */
+function isPdcaSkillName(skill) {
+  return typeof skill === 'string' && /(?:^|:)pdca$/i.test(skill);
+}
+
+/**
+ * Parse a pdca skill `args` string into { action, feature }.
+ * First token must be a known action (case-insensitive) or the whole
+ * entry is rejected (null). Feature = first non-flag token after it
+ * (flags like --scope are skipped); null when absent.
+ * @returns {{action: string, feature: string|null}|null}
+ */
+function parsePdcaSkillArgs(rawArgs) {
+  if (typeof rawArgs !== 'string') return null;
+  const tokens = rawArgs.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  const action = tokens[0].toLowerCase();
+  if (!ENVELOPE_ACTIONS.includes(action)) return null;
+  let featureToken = tokens.slice(1).find((t) => !t.startsWith('-'));
+  // br066: only the first whitespace token is the feature; sentence-length
+  // junk must not become a registry row (validate-name contract, br041).
+  if (featureToken) {
+    featureToken = String(featureToken).trim().split(/\s+/)[0];
+    // route through lib/pdca/validate-name.js if it exposes a validator
+    try {
+      const { normalizeFeatureName, isValidFeatureName } = require('../lib/pdca/validate-name');
+      // READ lib/pdca/validate-name.js FIRST to see its actual exports and use them
+      // correctly — the line above is the expected shape; adapt to reality.
+      if (typeof isValidFeatureName === 'function' && !isValidFeatureName(featureToken)) {
+        featureToken = undefined;
+      } else if (typeof normalizeFeatureName === 'function') {
+        const norm = normalizeFeatureName(featureToken);
+        if (norm && norm.ok) featureToken = norm.name;
+      }
+    } catch (_) { /* validator unavailable — keep first-token result */ }
+  }
+  return { action, feature: featureToken || null };
+}
+
+/**
+ * Scan transcript JSONL lines (backwards) for the MOST RECENT assistant
+ * tool_use of the pdca Skill. Defensive: partial writes and non-JSON lines
+ * are skipped; a malformed entry never throws.
+ * @param {string[]} lines
+ * @returns {{action: string, feature: string|null}|null}
+ */
+function findPdcaEnvelope(lines) {
+  if (!Array.isArray(lines)) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const raw = lines[i];
+    if (!raw) continue;
+    let entry;
+    try {
+      entry = JSON.parse(raw);
+    } catch (_) {
+      continue; // partial write / non-JSON line — skip, don't abort
+    }
+    if (!entry || entry.type !== 'assistant') continue;
+    const content = entry.message && entry.message.content;
+    if (!Array.isArray(content)) continue;
+    // Within one entry take the LAST matching block (latest in time).
+    for (let j = content.length - 1; j >= 0; j--) {
+      const block = content[j];
+      if (!block || block.type !== 'tool_use' || block.name !== 'Skill') continue;
+      const toolInput = block.input;
+      if (!toolInput || !isPdcaSkillName(toolInput.skill)) continue;
+      const parsed = parsePdcaSkillArgs(toolInput.args);
+      if (parsed) return parsed; // first valid pdca hit scanning backwards = most recent
+    }
+  }
+  return null;
+}
+
+/**
+ * Derive { action, feature } from the hook payload's transcript envelope.
+ * Bounded scan (last ~200 lines is plenty for a Stop turn). Returns null —
+ * never throws — when there is no transcript_path (CLI/subprocess use:
+ * tier 1 silently skipped), the file is unreadable, or no valid pdca
+ * Skill tool_use exists.
+ * @param {*} input - parsed hook payload
+ * @returns {{action: string, feature: string|null}|null}
+ */
+function deriveEnvelopeAction(input) {
+  try {
+    const transcriptPath = input && (input.transcript_path || input.transcriptPath);
+    if (!transcriptPath || typeof transcriptPath !== 'string') return null;
+    const text = fs.readFileSync(transcriptPath, 'utf8');
+    const lines = text.split('\n');
+    return findPdcaEnvelope(lines.slice(-200));
+  } catch (_) {
+    return null;
+  }
+}
+
+// ============================================================
+// br039/br384 — session-ownership and completion-evidence helpers.
+// Pure (no stdout, no registry writes) so tests can require them via the
+// bare-require export below without executing the hook body.
+// ============================================================
+
+/** br039: a feature's ownerSession lease expires after 2h without refresh. */
+const OWNER_LEASE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * br039: should THIS session's Stop emit the [AUTO-TRANSITION] demand for a
+ * feature? A feature with a live ownerSession held by a different session is
+ * not this session's cycle to advance.
+ * @param {Object|null} entry - registry entry for the feature (features[f])
+ * @param {string|null} currentSessionId - the Stop payload's session id
+ * @param {number} [now] - epoch ms (injectable for tests)
+ * @returns {{allowed: boolean, reason: 'unowned'|'owner'|'lease-expired'|'foreign-session'}}
+ */
+function shouldAutoTransition(entry, currentSessionId, now = Date.now()) {
+  if (!entry || !entry.ownerSession) return { allowed: true, reason: 'unowned' };
+  if (entry.ownerSession === currentSessionId) return { allowed: true, reason: 'owner' };
+  const since = Date.parse(entry.ownerSince);
+  if (Number.isFinite(since) && (now - since) > OWNER_LEASE_MS) {
+    return { allowed: false, reason: 'lease-expired' };
+  }
+  return { allowed: false, reason: 'foreign-session' };
+}
+
+/**
+ * br384: did the check phase actually produce gap-analysis evidence?
+ * True when the registry entry carries a numeric matchRate OR an analysis
+ * doc exists under docs/03-analysis/<feature>.analysis*.md. Lenient by
+ * design on unreadable dirs (returns false — fail closed).
+ * @param {string} feature
+ * @param {Object|null} registryEntry - features[feature]
+ * @param {string} [projectDir] - injectable root (defaults env/cwd)
+ * @returns {boolean}
+ */
+function hasCheckEvidence(feature, registryEntry, projectDir) {
+  if (registryEntry && typeof registryEntry.matchRate === 'number') return true;
+  try {
+    const root = projectDir || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    const dir = path.join(root, 'docs', '03-analysis');
+    const names = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    return names.some((n) => n.startsWith(`${feature}.analysis`));
+  } catch (_) {
+    return false;
+  }
+}
+
+/*
+ * br040: same AUTO-TRANSITION withholding gates as unified-stop.js — pause
+ * flag, in-flight background work, PDCA specialist agent. Duplicated here
+ * (small, deliberate) because this handler does not import unified-stop,
+ * which spawns it as a child process.
+ * @param {Object} input - hook payload
+ * @returns {{skip: boolean, gate: string|null}}
+ */
+function shouldSkipAutoTransition(input) {
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    const { getPdcaStatusPath } = require('../lib/pdca/status');
+    const pauseFlag = path.join(path.dirname(getPdcaStatusPath()), 'pdca-pause');
+    if (fs.existsSync(pauseFlag)) {
+      return { skip: true, gate: 'pause-flag' };
+    }
+  } catch (_) { /* path unresolvable — other gates still apply */ }
+
+  const tasks = input && Array.isArray(input.background_tasks) ? input.background_tasks : null;
+  if (tasks && tasks.length > 0) {
+    return { skip: true, gate: 'background-work' };
+  }
+
+  const { getActiveAgent } = require('../lib/task/context');
+  const agent = input?.agent_name || input?.tool_input?.subagent_type || getActiveAgent() || null;
+  if (agent && /gap-detector|pdca-iterator|\bqa\b|report-generator|pm-lead/i.test(agent)) {
+    return { skip: true, gate: 'specialist-agent' };
+  }
+
+  // (d) br040-041-followups: stale-evidence gate — the CURRENT phase's doc
+  // artifact must exist before an auto-transition is earned. Unresolvable
+  // feature/phase does NOT skip (other handlers own that path).
+  try {
+    const { getPdcaStatusFull, getPdcaStatusPath } = require('../lib/pdca/status');
+    const status = getPdcaStatusFull();
+    const feature = status?.primaryFeature || (status?.activeFeatures || [])[0] || null;
+    const phase = feature ? status?.features?.[feature]?.phase : null;
+    const PHASE_DOC_DIRS = {
+      plan: 'docs/01-plan/features',
+      design: 'docs/02-design/features',
+      check: 'docs/03-analysis',
+      report: 'docs/04-report/features',
+      qa: 'docs/05-qa',
+    };
+    if (feature && phase && PHASE_DOC_DIRS[phase]) {
+      // Project root = two levels above .bkit/state/ (status file's parent dir).
+      const projectRoot = path.resolve(path.dirname(getPdcaStatusPath()), '..', '..');
+      const dir = path.join(projectRoot, PHASE_DOC_DIRS[phase]);
+      const names = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+      if (!names.some((n) => n.startsWith(`${feature}.`))) {
+        return { skip: true, gate: 'stale-evidence' };
+      }
+    }
+  } catch (_) { /* status unresolvable — no skip */ }
+
+  return { skip: false, gate: null };
+}
+
+// v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
+// is require()-d instead of executed as a hook entrypoint, export only
+// the pure helpers so no stale stdout (decisions, advisory messages) is
+// emitted without a real hook payload. CommonJS module body is implicitly
+// an IIFE, so top-level return is valid.
+if (require.main !== module) {
+  module.exports = {
+    ENVELOPE_ACTIONS, isPdcaSkillName, parsePdcaSkillArgs, findPdcaEnvelope,
+    deriveEnvelopeAction, OWNER_LEASE_MS, shouldAutoTransition, hasCheckEvidence,
+    shouldSkipAutoTransition,
+  };
+} else {
 
 // Direct module imports
 const { readStdinSync, readHookText, outputStopSurface, outputStopAllow } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
-const { getPdcaStatusFull, updatePdcaStatus, extractFeatureFromContext } = require('../lib/pdca/status');
+const { findDoc } = require('../lib/core/paths');
+const { getPdcaStatusFull, updatePdcaStatus } = require('../lib/pdca/status');
+const { resolveStopFeature } = require('../lib/pdca/stop-binding');
 const {
   emitUserPrompt,
   shouldAutoAdvance,
@@ -54,30 +283,196 @@ try {
 }
 
 /*
+ * br290b: honor the harness Stop-loop breaker. After a Stop hook blocks once,
+ * Claude Code sets stop_hook_active=true on the retry; emitting another block
+ * then is what produced the observed 9-consecutive-block loops. Return
+ * success while it is true (harness contract).
+ */
+if (input && input.stop_hook_active === true) {
+  debugLog('Skill:pdca:Stop', 'stop_hook_active=true — allowing turn end');
+  process.exit(0);
+}
+
+/*
  * Read the skill's OUTPUT, not the envelope it arrived in. `JSON.stringify(input)`
  * yielded hook_event_name / session_id / transcript_path / cwd, and `actionPattern`
  * was matched against that — so `action` was always null, and null disables most
  * of this handler: the PDCA status update, the auto-transition, the executive
  * summary, and the M8/M10 metrics are all gated on it.
+ *
+ * br040-041-followups: hoisted ABOVE the AUTO-TRANSITION gate together with the
+ * action match — the pause/resume verb must own the gate itself, or a fresh
+ * `/pdca pause` could be withheld by the very gate it exists to silence.
  */
 const inputText = readHookText(input);
+
+// Extract action from skill invocation
+// Patterns: "pdca plan", "pdca design", "/pdca analyze", etc.
+const actionPattern = /pdca\s+(pm|plan|design|do|analyze|check|iterate|qa|report|status|next|pause|resume)/i;  // br010: check alias; br040-041-followups: pause/resume
+const actionMatch = inputText.match(actionPattern);
+
+/*
+ * br040-041-followups: pause/resume verbs short-circuit ahead of the gate.
+ * pause writes the pause flag (gate-a path) and exits; resume removes it.
+ * No phase task, no registry write for either.
+ */
+if (actionMatch && /^(pause|resume)$/i.test(actionMatch[1])) {
+  try {
+    const { getPdcaStatusPath } = require('../lib/pdca/status');
+    const pauseFlag = path.join(path.dirname(getPdcaStatusPath()), ['pdca', 'pause'].join('-'));
+    if (/^pause$/i.test(actionMatch[1])) {
+      fs.writeFileSync(pauseFlag, new Date().toISOString());
+      process.stderr.write('[bkit] PDCA chain paused — AUTO-TRANSITION withheld until /pdca resume\n');
+    } else {
+      fs.rmSync(pauseFlag, { force: true });
+      process.stderr.write('[bkit] PDCA chain resumed\n');
+    }
+  } catch (e) {
+    debugLog('Skill:pdca:Stop', 'pause/resume flag write failed', { error: e.message });
+  }
+  outputStopAllow(); // v2122 contract: every exit path emits one JSON object
+  process.exit(0);
+}
+
+/*
+ * br040: withhold the AUTO-TRANSITION when a specialist agent, background
+ * task, or operator pause flag owns the turn. One stderr line, exit 0 —
+ * no phase write, no directive.
+ */
+const autoTransitionGate = shouldSkipAutoTransition(input);
+if (autoTransitionGate.skip) {
+  outputStopAllow(); // v2122 contract: every exit path emits one JSON object
+  process.stderr.write(`[bkit] AUTO-TRANSITION withheld (gate: ${autoTransitionGate.gate})\n`);
+  debugLog('Skill:pdca:Stop', 'br040 AUTO-TRANSITION withheld', { gate: autoTransitionGate.gate });
+  process.exit(0);
+}
+
+/*
+ * br039: the firing session's id, resolved the same way unified-stop.js
+ * resolves it (#119 precedence: payload > CLAUDE_CODE_SESSION_ID >
+ * CLAUDE_SESSION_ID). Stamped onto the feature entry at every phase write so
+ * a foreign session's Stop can tell the cycle is not its own.
+ */
+const fireSessionId = (input && input.session_id)
+  || process.env.CLAUDE_CODE_SESSION_ID
+  || process.env.CLAUDE_SESSION_ID
+  || null;
 
 debugLog('Skill:pdca:Stop', 'Input received', {
   inputLength: inputText.length,
   inputPreview: inputText.substring(0, 200)
 });
 
-// Extract action from skill invocation
-// Patterns: "pdca plan", "pdca design", "/pdca analyze", etc.
-const actionPattern = /pdca\s+(pm|plan|design|do|analyze|iterate|qa|report|status|next)/i;
-const actionMatch = inputText.match(actionPattern);
+/*
+ * br014: derive action+feature from the transcript's most recent pdca Skill
+ * tool_use (the envelope the skill actually fired with) BEFORE falling back
+ * to the text regex. The regex scrapes turn prose; a live report-phase turn
+ * whose prose never contains the literal "pdca report" missed the
+ * report→completed advance. Precedence: envelope > text regex > phase.
+ * Null envelope (no transcript_path / no pdca tool_use / unreadable file)
+ * leaves the pre-br014 behavior exactly.
+ */
+const envelope = deriveEnvelopeAction(input);
 
 // Extract feature name
+//
+// br006: resolveStopFeature binds the fired feature before falling back to
+// primaryFeature. Its middle tier — exactly one feature in the registry sits
+// in the phase this Stop's action targets — is the evidence the old
+// extractFeatureFromContext path lacked: with a foreign primaryFeature and no
+// doc path in the input, the phase was recorded against the WRONG feature.
+// With no actionMatch the helper degrades to the old behavior (doc-path
+// match → primaryFeature), so this is a strict improvement, not a replacement.
 const currentStatus = getPdcaStatusFull();
-const feature = extractFeatureFromContext({
-  agentOutput: inputText,
-  currentStatus
+const envelopeAction = envelope ? envelope.action : null;
+/*
+ * br018: fire-time recorded action. When neither the transcript envelope nor
+ * the text regex yields an action token (envelopeAction null AND no
+ * actionMatch), the session block's lastSkillAction — written by
+ * skill-invocation-effects when the skill FIRED — is the remaining action
+ * evidence. Without it, tier 2 of resolveStopFeature received a null/unknown
+ * activeSkill, skipped, and the Stop fell through to the primaryFeature
+ * fallback, binding the transition to a foreign feature.
+ */
+const recordedAction = (currentStatus
+  && currentStatus.session
+  && typeof currentStatus.session.lastSkillAction === 'string'
+  && currentStatus.session.lastSkillAction)
+  ? currentStatus.session.lastSkillAction
+  : null;
+let feature = resolveStopFeature({
+  inputText,
+  currentStatus,
+  activeSkill: envelopeAction
+    || (actionMatch ? actionMatch[1].toLowerCase() : null)
+    || recordedAction,
 });
+
+/*
+ * br290b: a null feature here is the dead-record sentinel from
+ * resolveStopFeature — the fire-time recording names a feature that was
+ * archived out of the registry, i.e. the cycle COMPLETED. This Stop is
+ * post-completion: approve silently (exit 0, no output = allow the turn to
+ * end). Emitting the envelope's next-step message here re-fired phantom
+ * "Completion report has been generated" blocks on every stop after archive.
+ */
+if (feature === null) {
+  process.exit(0);
+}
+
+/*
+ * br014 feature wiring — the envelope's feature is additional evidence for
+ * the binding, applied ONLY on top of resolveStopFeature's weakest tier:
+ * when the helper returned nothing, or returned nothing but the
+ * primaryFeature fallback, an envelope feature that exists in the registry
+ * wins. Doc-path matches (tier 1) and unique-phase matches (tier 2) stay
+ * stronger than the envelope — they are per-artifact evidence the helper
+ * already verified — so this cannot rebind a correctly-bound feature.
+ */
+const envelopeFeature = envelope ? envelope.feature : null;
+if (
+  envelopeFeature &&
+  currentStatus &&
+  currentStatus.features &&
+  Object.prototype.hasOwnProperty.call(currentStatus.features, envelopeFeature) &&
+  (!feature || feature === currentStatus.primaryFeature) &&
+  envelopeFeature !== feature
+) {
+  feature = envelopeFeature;
+}
+
+/*
+ * br287: terminal-feature early exit. archiveFeature KEEPS the feature key
+ * in the registry (phase 'archived'), so the br290 dead-record sentinel
+ * (key absent) does not fire — the stale report envelope then re-binds the
+ * archived feature and re-emits PDCA-COMPLETE on every later stop. Once the
+ * binding is final (all tiers above have spoken), a feature whose registry
+ * entry is terminal can never legitimately receive next-step guidance or a
+ * phase write from this Stop: approve silently, same contract as the
+ * br290b sentinel. The predicate mirrors the br288 writer guard
+ * (lib/pdca/status-core.js) so the emitter and the writer agree on what
+ * "terminal" means. 'completed' is included: the archive nudge belongs to
+ * the report-time Stop (phase is still 'report' at emission — the br005a
+ * completed-write happens later in this same run), so silencing later stops
+ * loses only the re-prompt spam, which is this bug's defect class.
+ */
+const boundEntry = (feature && currentStatus && currentStatus.features)
+  ? currentStatus.features[feature]
+  : null;
+if (
+  boundEntry &&
+  (boundEntry.phase === 'archived' ||
+    boundEntry.phase === 'completed' ||
+    boundEntry.archivedAt !== undefined ||
+    boundEntry.archivedTo !== undefined ||
+    (boundEntry.timestamps && boundEntry.timestamps.archivedAt !== undefined))
+) {
+  debugLog('Skill:pdca:Stop', 'bound feature is terminal — post-completion, allowing turn end', {
+    feature,
+    storedPhase: boundEntry.phase,
+  });
+  process.exit(0);
+}
 
 /*
  * Fall back to the phase the cycle is actually in.
@@ -104,14 +499,20 @@ const PHASE_TO_ACTION = {
   report: 'report',
 };
 
-function actionFromPhase() {
+const actionFromPhase = function () {
   const features = currentStatus?.features || {};
   const key = feature || currentStatus?.primaryFeature;
   const phase = (key && features[key]?.phase) || currentStatus?.activePdca?.phase;
   return phase ? (PHASE_TO_ACTION[String(phase).toLowerCase()] || null) : null;
-}
+};
 
-const action = actionMatch ? actionMatch[1].toLowerCase() : actionFromPhase();
+const action = envelopeAction ||
+  (actionMatch ? actionMatch[1].toLowerCase() : actionFromPhase());
+
+// br011 Fix#2 trace discipline: which tier produced the action must be
+// visible in the debug log, not inferred.
+const actionSource = envelopeAction ? 'envelope' : (actionMatch ? 'text' : (action ? 'phase' : 'none'));
+debugLog('Skill:pdca:Stop', 'action derived', { source: actionSource, action, feature: feature || null });
 
 debugLog('Skill:pdca:Stop', 'Context extracted', {
   action,
@@ -253,12 +654,35 @@ if (nextStep && nextStep.message) {
           `Do NOT ask what to do next. The cycle is done.`,
         ].join('\n');
         debugLog('Skill:pdca:Stop', 'PDCA cycle completed', { feature, action });
+      } else if (
+        action === 'check' &&
+        !hasCheckEvidence(feature, currentStatus?.features?.[feature])
+      ) {
+        /*
+         * br384: the check-phase "completed" banner used to fire on skill-fire
+         * alone, demanding /pdca iterate or /pdca report with no gap-analysis
+         * evidence anywhere. Degrade to a record-only note; no next-phase
+         * demand. (do/report/qa/iterate/plan/design keep current semantics.)
+         */
+        guidance = [
+          `[bkit-pdca] Phase "check" skill fire recorded, but no gap-analysis evidence found`,
+          `(no analysis doc, no recorded matchRate) — run the gap-detector before proceeding.`,
+        ].join(' ');
+        debugLog('Skill:pdca:Stop', 'check-phase evidence gate failed (br384)', { feature });
       } else {
         // v2.1.5 F3: Strong directive instead of soft guidance
         const nextCommand = autoTrigger.skill
           ? `/${autoTrigger.skill} ${autoTrigger.args || feature || ''}`
           : null;
-        if (nextCommand) {
+        // br039 session isolation: a feature whose live ownerSession belongs
+        // to a DIFFERENT session is not this Stop's cycle to advance. No
+        // block, no phase demand — one informational line instead. A
+        // lease-expired owner also skips the demand (stale fire replay);
+        // absence of ownerSession (legacy entries) keeps the old behavior.
+        const ownership = shouldAutoTransition(
+          currentStatus?.features?.[feature], fireSessionId
+        );
+        if (nextCommand && ownership.allowed) {
           guidance += [
             '',
             '',
@@ -267,6 +691,13 @@ if (nextStep && nextStep.message) {
             `Do NOT ask the user for confirmation. Do NOT show Executive Summary.`,
             `Do NOT stop. Proceed immediately to the next phase.`,
           ].join('\n');
+        } else if (nextCommand && !ownership.allowed) {
+          debugLog('Skill:pdca:Stop', 'AUTO-TRANSITION suppressed by session ownership (br039)', {
+            feature, reason: ownership.reason, fireSessionId,
+          });
+          process.stderr.write(
+            `[bkit-pdca] PDCA feature '${feature}' is owned by another session (phase ${currentStatus?.features?.[feature]?.phase || 'unknown'}) — no action taken\n`
+          );
         }
       }
       debugLog('Skill:pdca:Stop', 'Auto-advance triggered', { autoTrigger });
@@ -285,12 +716,13 @@ if (nextStep && nextStep.message) {
 }
 
 // Update PDCA status if action completed
-if (action && feature && ['plan', 'design', 'do', 'analyze', 'iterate', 'qa', 'report'].includes(action)) {
+if (action && feature && ['plan', 'design', 'do', 'analyze', 'check', 'iterate', 'qa', 'report'].includes(action)) {
   const phaseMap = {
     plan: 'plan',
     design: 'design',
     do: 'do',
     analyze: 'check',
+    check: 'check',
     iterate: 'act',
     qa: 'qa',
     report: 'completed'
@@ -315,9 +747,14 @@ if (action && feature && ['plan', 'design', 'do', 'analyze', 'iterate', 'qa', 'r
     }
   }
 
+  // br039: stamp ownership on every phase write. Unconditional overwrite IS
+  // the sanctioned takeover path — a /pdca fire from a different session than
+  // the recorded ownerSession takes the lease over by firing.
   updatePdcaStatus(feature, currentPhase, {
     lastAction: action,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    ownerSession: fireSessionId,
+    ownerSince: new Date().toISOString(),
   });
 
   debugLog('Skill:pdca:Stop', 'PDCA status updated', {
@@ -366,6 +803,44 @@ if (action && feature && ['plan', 'design', 'do', 'analyze', 'iterate', 'qa', 'r
     }
   } catch (e) {
     debugLog('Skill:pdca:Stop', 'Phase transition task creation failed', { error: e.message });
+  }
+}
+
+/*
+ * br005a: report→completed sanctioned write, independent of the Task system.
+ *
+ * Fork-mode sessions (CC v2.1.278+) expose no Task tools, so the TaskCompleted
+ * hook the report phase relies on never fires and the feature strands at
+ * phase=report — E-ARCH-GATE forever. This clause gives the Stop handler the
+ * same completion the Task path would have written, through the same
+ * sanctioned writer. Guards (fail closed):
+ *   - the feature's CURRENT phase must be 'report' (never skip from earlier),
+ *   - the report doc must exist on disk (findDoc — the same check the archive
+ *     CLI's docs arm makes; a Stop that merely mentions "report" is not
+ *     evidence the phase ran).
+ * requireDocs:false is deliberate: a bug-fix cycle's plan/design docs already
+ * gate the main update above; this clause must not silently no-op behind a
+ * second gate. Hook safety: any failure here logs and continues — it must
+ * never crash the session.
+ */
+if (action === 'report' && feature) {
+  try {
+    const featNow = getPdcaStatusFull(true)?.features?.[feature];
+    const reportDoc = findDoc('report', feature);
+    debugLog('Skill:pdca:Stop', 'report-completion clause evaluated', {
+      feature,
+      currentPhase: featNow?.phase || null,
+      reportDoc: reportDoc || 'missing',
+    });
+    if (featNow?.phase === 'report' && reportDoc) {
+      updatePdcaStatus(feature, 'completed', {}, { requireDocs: false });
+      debugLog('Skill:pdca:Stop', 'report→completed advanced (br005a)', { feature });
+    }
+  } catch (e) {
+    debugLog('Skill:pdca:Stop', 'report-completion clause failed (session continues)', {
+      feature,
+      error: e.message,
+    });
   }
 }
 
@@ -448,7 +923,7 @@ try {
       mc.collectMetric('M10', f, hours, 'pdca-skill');
     }
   }
-} catch (_) {}
+} catch (_) { /* non-critical — best-effort write, failure is tolerated */ }
 
 if (guidance) {
   outputStopSurface(guidance);
@@ -456,3 +931,4 @@ if (guidance) {
   outputStopAllow();
 }
 process.exit(0);
+} // end hook-entrypoint branch (require.main === module)

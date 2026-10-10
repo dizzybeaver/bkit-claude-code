@@ -52,13 +52,17 @@ assert(cc.getToolName(null) === null, 'getToolName(null) returns null');
 assert(cc.getToolName({ tool_name: 'Bash' }) === 'Bash', 'getToolName extracts tool_name');
 assert(cc.getToolName({}) === null, 'getToolName missing returns null');
 
-// 5. getPermissionFlags
+// 5. getPermissionFlags (br094: CC sends top-level permission_mode; sandbox flag is env-only)
 const pf1 = cc.getPermissionFlags(null);
 assert(pf1.bypassPermissions === false && pf1.dangerouslyDisableSandbox === false, 'getPermissionFlags(null) defaults to false');
-const pf2 = cc.getPermissionFlags({ permissions: { bypassPermissions: true } });
-assert(pf2.bypassPermissions === true, 'getPermissionFlags bypassPermissions true');
-const pf3 = cc.getPermissionFlags({ permissions: { dangerouslyDisableSandbox: true } });
-assert(pf3.dangerouslyDisableSandbox === true, 'getPermissionFlags dangerouslyDisableSandbox true');
+const pf2 = cc.getPermissionFlags({ permission_mode: 'bypassPermissions' });
+assert(pf2.bypassPermissions === true, 'getPermissionFlags bypassPermissions true (permission_mode)');
+const pf3 = cc.getPermissionFlags({});
+assert(pf3.bypassPermissions === false && pf3.dangerouslyDisableSandbox === false, 'getPermissionFlags({}) defaults with no permission_mode/env');
+process.env.CLAUDE_CODE_DANGEROUSLY_DISABLE_SANDBOX = '1';
+const pf4 = cc.getPermissionFlags({});
+assert(pf4.dangerouslyDisableSandbox === true, 'getPermissionFlags dangerouslyDisableSandbox from env');
+delete process.env.CLAUDE_CODE_DANGEROUSLY_DISABLE_SANDBOX;
 
 // 6. getHookEventName
 assert(cc.getHookEventName({ hook_event_name: 'SessionStart' }) === 'SessionStart', 'getHookEventName extracts');

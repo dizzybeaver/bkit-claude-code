@@ -14,7 +14,7 @@ function test(name, fn) {
 
 // ==================== Facade ====================
 const facade = require('../../lib/pdca/status');
-test('facade exports 28 items', () => assert.strictEqual(Object.keys(facade).length, 28));
+test('facade exports 29 items', () => assert.strictEqual(Object.keys(facade).length, 29));
 
 // Core daily-use API
 const CORE_API = [
@@ -51,9 +51,10 @@ const cleanup = require('../../lib/pdca/status-cleanup');
 
 // v2.1.16 hardening: status-core exports grew 17 → 19 (added shouldUpdate +
 // appendHistoryEntry helpers as part of v2.1.15 #89 6-Layer Defense refactor).
-test('status-core exports 20 functions', () => assert.strictEqual(Object.keys(core).length, 20));
+// br007 fix added pickPrimarySuccessor (sanctioned promotion fallback) → 21.
+test('status-core exports 21 functions', () => assert.strictEqual(Object.keys(core).length, 21));
 test('status-migration exports 3 functions', () => assert.strictEqual(Object.keys(migration).length, 3));
-test('status-cleanup exports 5 functions', () => assert.strictEqual(Object.keys(cleanup).length, 5));
+test('status-cleanup exports 6 functions', () => assert.strictEqual(Object.keys(cleanup).length, 6));
 
 // ==================== createInitialStatusV2 ====================
 test('createInitialStatusV2 returns v2.0 version', () => {

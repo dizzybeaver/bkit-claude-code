@@ -14,6 +14,37 @@ const path = require('path');
 
 const trustEngine = require('../../lib/control/trust-engine');
 
+// ── br045 sandbox ────────────────────────────────────────────────────────
+// The reconcile() tests below reach syncToControlState → REAL control-state.json
+// writes (a low synthetic trust score maps to level 1 — the SC-1 poisoner).
+// They run against a throwaway CLAUDE_PROJECT_DIR instead. syncToControlState
+// resolves PROJECT_DIR lazily (trust-engine.js:495, require('../core/platform'))
+// and early-returns when control-state.json is absent, so reconcile's return
+// semantics are unchanged in the sandbox; the purge MUST cover the lib/core/
+// BARREL (a barrel loaded before the sandbox pins a stale platform PROJECT_DIR).
+function purgeCache(re) {
+  Object.keys(require.cache).forEach(k => { if (re.test(k)) delete require.cache[k]; });
+}
+const TRUST_PURGE = /lib\/(core\/|control\/(automation-controller|trust-engine))/;
+const realStatePath = path.resolve(__dirname, '../../.bkit/runtime/control-state.json');
+let realStateBefore = null;
+try { realStateBefore = fs.readFileSync(realStatePath, 'utf8'); } catch (_) { /* absent is fine */ }
+
+function withSandboxedTrustEngine(fn) {
+  const os = require('os');
+  const saved = process.env.CLAUDE_PROJECT_DIR;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reconcile-sandbox-'));
+  try {
+    process.env.CLAUDE_PROJECT_DIR = tmp;
+    purgeCache(TRUST_PURGE);
+    fn(require('../../lib/control/trust-engine'));
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = saved;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    purgeCache(TRUST_PURGE); // later suites re-require the REAL modules
+  }
+}
+
 // ── Public surface ───────────────────────────────────────────────────────
 test('trust-engine exports reconcile()', () => {
   assert.equal(typeof trustEngine.reconcile, 'function');
@@ -24,33 +55,54 @@ test('trust-engine exports syncToControlState()', () => {
 });
 
 test('reconcile: returns ok when not skipped', () => {
-  const r = trustEngine.reconcile({ trigger: 'test.unit' });
-  assert.equal(r.ok, true);
-  assert.equal(typeof r.flags, 'object');
+  withSandboxedTrustEngine((sandboxed) => {
+    const r = sandboxed.reconcile({ trigger: 'test.unit' });
+    assert.equal(r.ok, true);
+    assert.equal(typeof r.flags, 'object');
+  });
 });
 
 test('reconcile: surfaces all 3 flags in result', () => {
-  const r = trustEngine.reconcile();
-  assert.ok(r.flags);
-  for (const k of ['trustEnabled', 'autoEscalation', 'autoDowngrade']) {
-    assert.ok(Object.prototype.hasOwnProperty.call(r.flags, k),
-      `flag ${k} must surface in reconcile result`);
-    assert.equal(typeof r.flags[k], 'boolean', `${k} must be boolean`);
-  }
+  withSandboxedTrustEngine((sandboxed) => {
+    const r = sandboxed.reconcile();
+    assert.ok(r.flags);
+    for (const k of ['trustEnabled', 'autoEscalation', 'autoDowngrade']) {
+      assert.ok(Object.prototype.hasOwnProperty.call(r.flags, k),
+        `flag ${k} must surface in reconcile result`);
+      assert.equal(typeof r.flags[k], 'boolean', `${k} must be boolean`);
+    }
+  });
 });
 
 test('reconcile: trigger defaults to "manual" when omitted', () => {
-  const r = trustEngine.reconcile();
-  // ok or skipped — both acceptable depending on config.trustScoreEnabled
-  if (!r.skipped) {
-    assert.equal(r.trigger, 'manual');
-  }
+  withSandboxedTrustEngine((sandboxed) => {
+    const r = sandboxed.reconcile();
+    // ok or skipped — both acceptable depending on config.trustScoreEnabled
+    if (!r.skipped) {
+      assert.equal(r.trigger, 'manual');
+    }
+  });
 });
 
 test('reconcile: explicit trigger preserved', () => {
-  const r = trustEngine.reconcile({ trigger: 'pdca.do.completed' });
-  if (!r.skipped) {
-    assert.equal(r.trigger, 'pdca.do.completed');
+  withSandboxedTrustEngine((sandboxed) => {
+    const r = sandboxed.reconcile({ trigger: 'pdca.do.completed' });
+    if (!r.skipped) {
+      assert.equal(r.trigger, 'pdca.do.completed');
+    }
+  });
+});
+
+// br045 redirection proof (absence-tolerant): the sandboxed reconcile calls must
+// not have touched the real control-state.json. Runs after the 4 tests above
+// (node:test registration order).
+test('br045: real control-state.json untouched by the sandboxed reconcile calls', () => {
+  if (realStateBefore === null) {
+    assert.equal(fs.existsSync(realStatePath), false,
+      'real state file must stay absent');
+  } else {
+    assert.equal(fs.readFileSync(realStatePath, 'utf8'), realStateBefore,
+      'real control-state.json must be byte-identical after the sandboxed reconcile tests');
   }
 });
 

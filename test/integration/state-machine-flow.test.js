@@ -195,12 +195,12 @@ assert('SF-017',
   'check -> idle via RESET wildcard transition'
 );
 
-// SF-018: ABANDON from any state -> archived
+// SF-018: br035 — ABANDON edge removed; the transition must now fail
 const ctx18 = sm.createContext('test-abandon-1', { currentState: 'design' });
 const r18 = sm.transition('design', 'ABANDON', ctx18);
 assert('SF-018',
-  r18.success === true && r18.currentState === 'archived',
-  'design -> archived via ABANDON wildcard transition'
+  r18.success === false,
+  'design + ABANDON rejected (br035: dead archive edges removed)'
 );
 
 // SF-019: REJECT from pm -> idle

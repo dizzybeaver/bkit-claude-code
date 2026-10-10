@@ -12,6 +12,35 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// br045: state-mutating controller probes run against a throwaway
+// CLAUDE_PROJECT_DIR so the REAL .bkit/runtime/control-state.json is never touched.
+function purge(re) {
+  Object.keys(require.cache).forEach(k => { if (re.test(k)) delete require.cache[k]; });
+}
+// br045 fix: the purge MUST include the lib/core/index.js BARREL key. getCore()
+// memoizes require('../core'), and a barrel loaded before the sandbox pins a
+// platform instance whose PROJECT_DIR was resolved from the then-current env —
+// purging platform/cache/config alone leaves that stale barrel holding the real
+// state path. Purging the whole lib/core/ subtree detaches every reference.
+const CTRL_PURGE = /lib\/(core\/|control\/automation-controller)/;
+function withSandboxedController(fn) {
+  const saved = process.env.CLAUDE_PROJECT_DIR;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-interruptible-'));
+  try {
+    process.env.CLAUDE_PROJECT_DIR = tmp;
+    purge(CTRL_PURGE);
+    const sandboxed = require('../../lib/control/automation-controller');
+    fn(sandboxed, tmp);
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = saved;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    purge(CTRL_PURGE); // later suites re-require the REAL controller
+  }
+}
 
 let controller, checkpointManager, loopBreaker, trustEngine;
 try {
@@ -56,34 +85,52 @@ test('AI-001', 'emergencyStop function exists', () => {
 });
 
 test('AI-002', 'emergencyStop returns previous and fallback levels', () => {
-  const result = controller.emergencyStop('test-emergency');
-  assert.ok('previousLevel' in result, 'Result has previousLevel');
-  assert.ok('fallbackLevel' in result, 'Result has fallbackLevel');
-  assert.ok(typeof result.previousLevel === 'number');
-  assert.ok(typeof result.fallbackLevel === 'number');
-  // Resume to clean up state
-  controller.emergencyResume();
+  withSandboxedController((sandboxed, tmp) => {
+    const result = sandboxed.emergencyStop('test-emergency');
+    assert.ok('previousLevel' in result, 'Result has previousLevel');
+    assert.ok('fallbackLevel' in result, 'Result has fallbackLevel');
+    assert.ok(typeof result.previousLevel === 'number');
+    assert.ok(typeof result.fallbackLevel === 'number');
+    // Resume to clean up state
+    sandboxed.emergencyResume();
+    // br045 redirection proof: the probe wrote the sandbox state, not the real one.
+    assert.ok(fs.existsSync(path.join(tmp, '.bkit/runtime/control-state.json')),
+      'sandbox control-state.json must exist after the probe (br045)');
+  });
 });
 
 test('AI-003', 'emergencyStop sets fallback to low level', () => {
-  const result = controller.emergencyStop('test-low-fallback');
-  assert.ok(result.fallbackLevel <= 2, `Fallback should be L2 or lower, got L${result.fallbackLevel}`);
-  controller.emergencyResume();
+  withSandboxedController((sandboxed, tmp) => {
+    const result = sandboxed.emergencyStop('test-low-fallback');
+    assert.ok(result.fallbackLevel <= 2, `Fallback should be L2 or lower, got L${result.fallbackLevel}`);
+    sandboxed.emergencyResume();
+    assert.ok(fs.existsSync(path.join(tmp, '.bkit/runtime/control-state.json')),
+      'sandbox control-state.json must exist after the probe (br045)');
+  });
 });
 
 test('AI-004', 'emergencyStop works from L4', () => {
-  controller.setLevel(4, { reason: 'test' });
-  const result = controller.emergencyStop('test-from-l4');
-  assert.strictEqual(result.previousLevel, 4, 'Previous should be L4');
-  assert.ok(result.fallbackLevel < 4, 'Fallback should be below L4');
-  controller.emergencyResume(2);
+  withSandboxedController((sandboxed, tmp) => {
+    sandboxed.setLevel(4, { reason: 'test' });
+    const result = sandboxed.emergencyStop('test-from-l4');
+    assert.strictEqual(result.previousLevel, 4, 'Previous should be L4');
+    assert.ok(result.fallbackLevel < 4, 'Fallback should be below L4');
+    sandboxed.emergencyResume(2);
+    // br045 redirection proof: the probe wrote the sandbox state, not the real one.
+    assert.ok(fs.existsSync(path.join(tmp, '.bkit/runtime/control-state.json')),
+      'sandbox control-state.json must exist after the probe (br045)');
+  });
 });
 
 test('AI-005', 'emergencyStop works from L0', () => {
-  controller.setLevel(0, { reason: 'test' });
-  const result = controller.emergencyStop('test-from-l0');
-  assert.strictEqual(result.previousLevel, 0, 'Previous should be L0');
-  controller.emergencyResume(2);
+  withSandboxedController((sandboxed, tmp) => {
+    sandboxed.setLevel(0, { reason: 'test' });
+    const result = sandboxed.emergencyStop('test-from-l0');
+    assert.strictEqual(result.previousLevel, 0, 'Previous should be L0');
+    sandboxed.emergencyResume(2);
+    assert.ok(fs.existsSync(path.join(tmp, '.bkit/runtime/control-state.json')),
+      'sandbox control-state.json must exist after the probe (br045)');
+  });
 });
 
 // ============================================================
@@ -168,17 +215,25 @@ test('AI-016', 'emergencyResume function exists', () => {
 });
 
 test('AI-017', 'emergencyResume returns success:true after emergency stop', () => {
-  controller.emergencyStop('test-resume');
-  const result = controller.emergencyResume(2);
-  assert.strictEqual(result.success, true, 'Should resume successfully');
+  withSandboxedController((sandboxed, tmp) => {
+    sandboxed.emergencyStop('test-resume');
+    const result = sandboxed.emergencyResume(2);
+    assert.strictEqual(result.success, true, 'Should resume successfully');
+    assert.ok(fs.existsSync(path.join(tmp, '.bkit/runtime/control-state.json')),
+      'sandbox control-state.json must exist after the probe (br045)');
+  });
 });
 
 test('AI-018', 'emergencyResume returns success:false when not in emergency', () => {
-  // Ensure we are NOT in emergency state
-  controller.setLevel(2, { reason: 'test-cleanup' });
-  controller.updateRuntimeState({ emergencyStop: false });
-  const result = controller.emergencyResume();
-  assert.strictEqual(result.success, false, 'Should fail when not in emergency');
+  withSandboxedController((sandboxed, tmp) => {
+    // Ensure we are NOT in emergency state
+    sandboxed.setLevel(2, { reason: 'test-cleanup' });
+    sandboxed.updateRuntimeState({ emergencyStop: false });
+    const result = sandboxed.emergencyResume();
+    assert.strictEqual(result.success, false, 'Should fail when not in emergency');
+    assert.ok(fs.existsSync(path.join(tmp, '.bkit/runtime/control-state.json')),
+      'sandbox control-state.json must exist after the probe (br045)');
+  });
 });
 
 test('AI-019', 'Loop breaker reset clears all counters', () => {

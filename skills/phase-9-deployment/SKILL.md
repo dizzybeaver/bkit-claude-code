@@ -16,7 +16,6 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
-user-invocable: false
 next-skill: null
 pdca-phase: act
 task-template: "[Phase-9] {feature}"

@@ -7,7 +7,7 @@
 > Post-v2.1.13 maintenance releases (v2.1.14 → v2.1.40, latest: v2.1.40 — method release: three methods adapted from gstack (MIT) into components that already shipped, so no skill, agent, hook or gate was added and the counts hold at 44 skills / 34 agents / 2 commands. `/plan-plus` gained a Phase 1.5 Premise Challenge that asks up to four forcing questions (demand, status quo, smallest useful version, cost of inaction) and closes on premises the user confirms, a Phase 3 scope mode chosen before the YAGNI review, and a Phase 4 failure map that forces every new entry point to declare what the user sees when it fails. `qa-lead` maps changed files to the pages they serve and tests those first, then walks each one exploratorily — forms, empty and error states, navigation — reading the console after every action rather than once per page, and summarizes the result as a weighted 0-100 Health Score that is reported next to the gate metrics but does not decide anything: `GATE_DEFINITIONS.qa` still owns the verdict, so nothing that passed at v2.1.39 fails at v2.1.40. `security-architect` gained an ordered audit procedure and an evidence bar — a finding is *supported* only with an attacker-controlled entry point, a path across a boundary, a concrete impact, and a check that existing protections do not already stop it; anything less is reported as *unconfirmed*, and every report opens with its own coverage. Previous v2.1.39 — status continuity release: a finished PDCA phase that `/pdca status` could not see. Six Stop handlers passed an `agentOutput` field nothing read, so the feature resolved to an empty `primaryFeature` and the phase was never recorded; `plan-plus-stop` also scanned the hook envelope, which never carries the assistant text. The phase is now also derivable from the documents on disk, so a lost write no longer empties the progress surface. `hooks.json` dropped a `$schema` key whose URL 404s and which Claude Code ≤2.1.268 reported as unknown once per session. Previous v2.1.38 — QA measurement release: the QA phase had been reporting success while producing nothing the quality gate could read. Six Stop handlers never saw their hook payload at all — `unified-stop` reads stdin with a reader that destroys it (deliberately, issue #139) and then dispatches handlers with `require()` in the same process, so the parent saw the payload and every child saw `{}`; the payload is now handed on, and handlers resolve it to the assistant's reported text instead of regexing the hook envelope or their own guidance string. The `qa` gate had required `qaCriticalCount === 0` since v2.1.1 with no metric ID producing that name, so it could never return `pass` and QA could not advance to Report regardless of test results — M16 supplies the metric and the gate is unchanged. Chrome MCP detection read `MCP_SERVERS`, which Claude Code does not set, so L3-L5 browser tests were skipped on 100% of runs while the docs described that skip as normal fallback. `act → qa` (QA_RETRY) was defined and never emitted, and its retry counter never advanced, so the escape hatch from the qa ↔ act loop could not fire. An unmeasured match rate defaulted to 0, which `isMeasured()` accepts as real, turning a parse failure into a recorded regression. Previous v2.1.37 — permission-mode awareness + the Claude Code v2.1.228–v2.1.232 response (Breaking 0, 171 consecutive compatible; fork mode is on by default from v2.1.232 and a subagent reports back on a later turn, so sprint gates report "not measured" rather than a score). The permission-mode half: Claude Code sends `permission_mode` on every hook event and bkit read it in zero places, so a session started with `--dangerously-skip-permissions` was interrupted exactly as often as one that had asked to be. A confirmation is only worth raising where someone can answer it, and in an unattended run nobody can — the agent stalls rather than fails. bkit now stands its ask tier down in `bypassPermissions`, `dontAsk` and `acceptEdits`; `critical` refusals and the user's own written directives hold in every mode, measured across 7 modes x 21 commands with every negative control intact. Five defects in the same code path shipped with it, including a regression guard that had never fired since v2.1.10 because it read a payload field Claude Code does not send, and a `grep` for a dangerous string being graded as performing one. 148 test files that ran in neither the local runner nor CI were adopted. Previous v2.1.36 — guardrail precision release: every Destructive Detector rule is written as one command's shape but was matched against the whole input, so `.*` ran past `&&`, `;` and newlines and tokens belonging to other commands in a chain were read as operands of the dangerous one. Rules are now matched per command segment. That closed 12 measured false positives down to 1 (an intended grading change: a scoped find-delete asks instead of denying, matching G-001) and, from the same root cause in the other direction, three false negatives — `chmod 777 / ; ls` had been detected by nothing at all. Reported by external dogfooder @Sinclair-Seo (issue #148) with a reproduction harness whose negative controls caught a regression introduced while fixing it. ADR 0016 records that guardrail rules are immutable at runtime, deliberately, and the refusal message now says so instead of pointing at a bkit.config.json setting the module never read. Config drift closed in both directions: five getConfig() paths that never resolved down to one (verified benign), and 27 keys read by nobody down to 13, each documented in the file with its reason. Previous v2.1.35 was a correction release: bkit's hooks were measured firing normally inside a git worktree, retiring an advisory that had told users otherwise and cited a closed-as-not-planned issue; a subdirectory of a plain checkout is no longer misread as a worktree (git reports `--git-dir` absolute and `--git-common-dir` relative to CWD, and the old code resolved both against toplevel); every shipped `child_process` call now passes argv rather than a shell string, enforced by contract. Previous v2.1.34 was a reachability release: hook events 22 → 21 after FileChanged was retired for never having fired; hook timeouts corrected from milliseconds to seconds (issue #139 root cause); `once` removed; Edit paths covered; host-integration tests now prove dispatch. Previous v2.1.33 was an enforcement release: defenses that detected correctly but never acted now act; CI can fail again; bkit no longer names your session. Previous: CC v2.1.219/220 compatibility: Claude Code v2.1.219 reversed v2.1.217 and made subagents spawn nested subagents at depth 3 by default, so the main turn now ends while subagents are still alive. Stop-family roster cleanup is gated on the `background_tasks` payload field, roster rows key on CC's per-instance `agent_id` instead of a display name, teammate models resolve from agent frontmatter rather than defaulting every row to `sonnet`, and roster writes are serialised under a file lock. SessionStart CC-version detection is repaired — a 200 ms budget could never beat a ~305 ms native-binary spawn and the failure was cached as valid for an hour, so the version advisory had never rendered; a `~/.local/bin/claude` symlink read now resolves it in 0 ms. Recommended Claude Code runtime bumped to v2.1.220) are tracked in CHANGELOG.md; the component counts below reflect the current tree.
 >
 > Current release highlights (v2.1.13 over v2.1.12):
-> - **Sprint Management (NEW v2.1.13 GA)**: 8-phase meta-container (`prd → plan → design → do → iterate → qa → report → archived`) — 16 sub-actions, 4 Auto-Pause Triggers (QUALITY_GATE_FAIL/ITERATION_EXHAUSTED/BUDGET_EXCEEDED/PHASE_TIMEOUT), Trust Level scope L0-L4 via `SPRINT_AUTORUN_SCOPE`, 7-Layer S1 dataFlowIntegrity QA, 4 sprint agents, 1 skill, 7 templates, 13 application-layer modules, 9 infrastructure adapters, 3 MCP tools, 1 L3 contract test (8 SC-01~08), 2 Korean guides, 2 ADRs (0006 + 0007)
+> - **Sprint Management (NEW v2.1.13 GA)**: 8-phase meta-container (`prd → plan → design → do → iterate → qa → report → archived`) — 20 sub-actions, 4 Auto-Pause Triggers (QUALITY_GATE_FAIL/ITERATION_EXHAUSTED/BUDGET_EXCEEDED/PHASE_TIMEOUT), Trust Level scope L0-L4 via `SPRINT_AUTORUN_SCOPE`, 7-Layer S1 dataFlowIntegrity QA, 4 sprint agents, 1 skill, 7 templates, 13 application-layer modules, 9 infrastructure adapters, 3 MCP tools, 1 L3 contract test (8 SC-01~08), 2 Korean guides, 2 ADRs (0006 + 0007)
 > - **Tech Debt Cleanup**: net −2,333 LOC removed (7 legacy `templates/infra/*` removed)
 > - **4 Sprints × 20 FRs** (v2.1.11 foundation): α Onboarding Revolution, β Discoverability, γ Trust Foundation, δ Port + Governance
 > - **Clean Architecture 4-Layer with 7 Port↔Adapter pairs**: Domain (ports 7 + guards 4 + rules) / Application (cc-regression + pdca + pdca-lifecycle + **sprint-lifecycle** v2.1.13 + team) / Infrastructure (cc-bridge + telemetry + docs-code-scanner + mcp-port-registry + mcp-test-harness + cc-version-checker + branding + **sprint** v2.1.13) / Presentation (hooks + scripts)
@@ -17,9 +17,11 @@
 > - **Guard Registry 21**: `lib/cc-regression/registry.js` with `expectedFix` auto-release via `lifecycle.reconcile()`
 > - **BKIT_VERSION 5-location invariant**: `bkit.config.json` single SoT → `plugin.json` + `hooks.json` + `session-start.js` + `README.md` + `CHANGELOG.md` (F9-120 closure 9-streak PASS)
 > - **One-Liner SSoT 5/5 (v2.1.11 α2)**: `lib/infra/branding.js` → `plugin.json` + `README.md` + `README-FULL.md` + `session-context.js` + `CHANGELOG.md`
-> - **Quality Gates M1-M10 (v2.1.11 δ2)** + **Sprint S1 (v2.1.13)**: catalog `docs/reference/quality-gates-m1-m10.md` + invariant `scripts/check-quality-gates-m1-m10.js`
+> - **Quality Gates M1-M10 (v2.1.11 δ2; current metric range M1-M16)** + **Sprint S1 (v2.1.13)**: catalog `docs/reference/quality-gates-m1-m10.md` + invariant `scripts/check-quality-gates-m1-m10.js`
 > - **i18n (v2.1.11 β3/β6)**: `lib/i18n/translator.js` + `detector.js` (KO/EN full + 6-lang fallback)
-> - **Docs=Code CI**: `scripts/docs-code-sync.js` — counts (44 Skills · 34 Agents · 21:24 Hooks · 19 MCP Tools · 190 Lib · 61 Scripts) + 5-location version + One-Liner invariant, 0 drift enforced
+<!-- docs-code-sync:begin -->
+> - **Docs=Code CI**: `scripts/docs-code-sync.js` — counts (44 Skills · 34 Agents · 21:24 Hooks · 19 MCP Tools · 207 Lib · 64 Scripts) + 5-location version + One-Liner invariant, 0 drift enforced
+<!-- docs-code-sync:end -->
 > - **ACTION_TYPES 20** (v2.1.13: +sprint_paused/sprint_resumed/master_plan_created/task_created) + **CATEGORIES 11** (+sprint)
 
 ## Purpose of This Document
@@ -62,7 +64,7 @@ bkit is a practical implementation of **Context Engineering**. Context Engineeri
 │  │  L2: Unified Scripts (stop, bash-pre, write-post, etc.)  │  │
 │  │  L3: Agent Frontmatter (constraints only)                │  │
 │  │  L4: Description Triggers (keyword matching)             │  │
-│  │  L5: Scripts (43 Node.js modules)                        │  │
+│  │  L5: Scripts (64 Node.js modules)                        │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                                 │                               │
 │                                 ▼                               │
@@ -160,8 +162,8 @@ flowchart LR
 | Component | Depends On | Purpose |
 |-----------|-----------|---------|
 | `skill-orchestrator.js` | `lib/pdca/`, `lib/task/` | PDCA state + Task management |
-| `gap-detector-stop.js` | `lib/common.js` → `lib/task/` | Task creation, triggerNextPdcaAction |
-| `iterator-stop.js` | `lib/common.js` → `lib/task/` | Task update, phase transition |
+| `gap-detector-stop.js` | `lib/task/` (direct; `lib/common.js` bridge removed in v2.x) | Task creation, triggerNextPdcaAction |
+| `iterator-stop.js` | `lib/task/` (direct) | Task update, phase transition |
 | `pdca-skill-stop.js` | `lib/task/` | Task chain creation (v1.4.7) |
 | `pdca` skill | `templates/*.md` | Template imports |
 | `agents/*.md` | `skills` | `skills` frontmatter field (preloads the full skill content at subagent startup) |
@@ -185,7 +187,7 @@ lib/
 │                                                                 │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
 │  │   Skills     │───▶│   Agents     │───▶│   Scripts    │      │
-│  │  (44)        │    │  (34)        │    │  (51)        │      │
+│  │  (44)        │    │  (34)        │    │  (64)        │      │
 │  └──────────────┘    └──────────────┘    └──────────────┘      │
 │         │                   │                   │               │
 │         ▼                   ▼                   ▼               │
@@ -212,16 +214,16 @@ lib/
 
 | Component | Count | Role | Details |
 |-----------|-------|------|---------|
-| Skills | 43 | Domain knowledge + Slash commands (v2.1.11 added bkit-evals, bkit-explore, pdca-watch, pdca-fast-track) | [[components/skills/_skills-overview]] |
+| Skills | 44 | Domain knowledge + Slash commands (v2.1.11 added bkit-evals, bkit-explore, pdca-watch, pdca-fast-track) | [[components/skills/_skills-overview]] |
 | Agents | 34 | Specialized task execution (6 fable / 10 opus / 16 sonnet / 2 haiku; v2.1.26 verifier cost retune; 6 pdca-eval-* registry-tombstoned per ADR 0014) | [[components/agents/_agents-overview]] |
 | Commands | DEPRECATED | Migrated to Skills (v1.4.4) | - |
 | Hooks | 21 events (24 blocks) | Event-based triggers (unified) | [[components/hooks/_hooks-overview]] |
-| Scripts | 49 | Actual logic execution | [[components/scripts/_scripts-overview]] |
-| Lib | 22 subdirectories, 190 modules | Clean Architecture 4-Layer with 7 Port↔Adapter pairs (Domain / Application / Infrastructure / Presentation) | See [CHANGELOG](../CHANGELOG.md#architecture-snapshot) |
-| Evals | 28 | Skill evaluation definitions | Skill Creator + A/B Testing |
+| Scripts | 64 (68 incl. scripts/lib + scripts/qa; +4 .sh) | Actual logic execution | [[components/scripts/_scripts-overview]] |
+| Lib | 22 subdirectories, 207 modules | Clean Architecture 4-Layer with 7 Port↔Adapter pairs (Domain / Application / Infrastructure / Presentation) | See [CHANGELOG](../CHANGELOG.md#architecture-snapshot) |
+| Evals | 32 | Skill evaluation definitions (18 capability + 13 workflow + 1 hybrid; 107 files in tree) | Skill Creator + A/B Testing |
 | Config | 1 | Centralized settings | `bkit.config.json` (BKIT_VERSION SSoT) |
-| Templates | 18 | Document templates | PDCA + Pipeline + Shared |
-| MCP Servers | 2 | Runtime tools for Claude Code | `bkit-pdca` + `bkit-analysis` (16 tools) |
+| Templates | 40 | Document templates (19 root + 7 sprint + 10 pipeline + 4 shared) | PDCA + Pipeline + Shared |
+| MCP Servers | 2 | Runtime tools for Claude Code | `bkit-pdca` + `bkit-analysis` (19 tools) |
 | Output Styles | 4 | Response formatting | bkit-learning / bkit-pdca-guide / bkit-enterprise / bkit-pdca-enterprise |
 
 ## v2.1.11 Features
@@ -256,8 +258,8 @@ Layer 2: Unified Scripts     → unified-stop.js, unified-bash-pre.js, unified-w
                                 session-end-handler.js, subagent-stop-handler.js, etc.
 Layer 3: Agent Frontmatter   → Constraints and role definitions (frontmatter hooks deprecated v1.4.4)
 Layer 4: Description Triggers → "Triggers:" keyword matching (8 languages)
-Layer 5: Scripts             → Actual Node.js logic execution (61 modules)
-Layer 6: Lib Modules         → 22 subdirectories, 190 modules (Clean Architecture 4-Layer with 7 Port↔Adapter pairs)
+Layer 5: Scripts             → Actual Node.js logic execution (64 modules)
+Layer 6: Lib Modules         → 22 subdirectories, 207 modules (Clean Architecture 4-Layer with 7 Port↔Adapter pairs)
 ```
 
 > **Note (v1.4.4)**: All hooks centralized in hooks.json. SKILL.md frontmatter hooks deprecated (backward compatible).
@@ -281,6 +283,7 @@ bkit-system/
 ├── philosophy/                # Design philosophy
 │   ├── core-mission.md        # Core mission & 3 philosophies
 │   ├── ai-native-principles.md # AI-Native development principles
+│   ├── context-engineering.md # Context Engineering principles
 │   └── pdca-methodology.md    # PDCA & Pipeline methodology
 ├── components/
 │   ├── skills/                # Skill details
@@ -304,7 +307,7 @@ bkit-system/
 | Scripts | `scripts/*.js` |
 | Templates | `templates/*.md` |
 | Hooks | `hooks/hooks.json` |
-| Lib | `lib/audit/`, `lib/application/`, `lib/cc-regression/`, `lib/context/`, `lib/control/`, `lib/core/`, `lib/dashboard/`, `lib/discovery/`, `lib/domain/`, `lib/evals/`, `lib/i18n/`, `lib/infra/`, `lib/intent/`, `lib/orchestrator/`, `lib/pdca/`, `lib/qa/`, `lib/quality/`, `lib/task/`, `lib/team/`, `lib/ui/` |
+| Lib | `lib/application/`, `lib/audit/`, `lib/cc-regression/`, `lib/control/`, `lib/core/`, `lib/dashboard/`, `lib/defense/`, `lib/discovery/`, `lib/domain/`, `lib/evals/`, `lib/i18n/`, `lib/infra/`, `lib/intent/`, `lib/orchestrator/`, `lib/pdca/`, `lib/qa/`, `lib/quality/`, `lib/sprint/`, `lib/task/`, `lib/team/`, `lib/ui/`, `lib/util/` |
 | Config | `bkit.config.json` |
 | Context | `CLAUDE.md` |
 | Manifest | `.claude-plugin/plugin.json` |
@@ -346,7 +349,7 @@ The `bkit-system/.obsidian/` folder includes shared settings:
 | `workspace.json` | Personal workspace state | No |
 | `app.json` | Personal app settings | No |
 
-> **Tip**: The graph settings are pre-configured for optimal visualization of bkit's 44 skills, 34 agents, 61 scripts, 190 lib modules (22 subdirs), and their relationships.
+> **Tip**: The graph settings are pre-configured for optimal visualization of bkit's 44 skills, 34 agents, 64 scripts, 207 lib modules (22 subdirs), and their relationships.
 
 ---
 
@@ -373,14 +376,14 @@ bkit v1.6.0 integrates CC 2.1.0 Skills 2.0 features:
 
 | Component | Count |
 |-----------|-------|
-| Skills | 43 (v2.1.11 added bkit-evals, bkit-explore, pdca-watch, pdca-fast-track) |
+| Skills | 44 (v2.1.11 added bkit-evals, bkit-explore, pdca-watch, pdca-fast-track) |
 | Agents | 34 (6 fable / 10 opus / 16 sonnet / 2 haiku; v2.1.26 verifier cost retune; 6 pdca-eval-* registry-tombstoned per ADR 0014) |
-| Lib Modules | 190 across 22 subdirectories |
-| Scripts | 49 |
+| Lib Modules | 207 across 22 subdirectories |
+| Scripts | 64 (68 incl. scripts/lib + scripts/qa) |
 | Hook Events | 21 (24 blocks) |
-| Templates | 18 |
+| Templates | 40 |
 | Output Styles | 4 |
-| MCP Servers | 2 (bkit-pdca, bkit-analysis; 16 tools registered via `lib/infra/mcp-port-registry.js`) |
+| MCP Servers | 2 (bkit-pdca, bkit-analysis; 19 tools registered via `lib/infra/mcp-port-registry.js`) |
 | Port↔Adapter pairs | 7 (cc-payload, state-store, regression-registry, audit-sink, token-meter, docs-code-index, mcp-tool) |
 | Test Files | 117+ (qa-aggregate scope) |
 | Test Cases | 4,000+ (3,762 baseline + 261 v2.1.11) |
