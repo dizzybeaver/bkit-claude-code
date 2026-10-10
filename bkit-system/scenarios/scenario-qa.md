@@ -87,7 +87,7 @@ User: "/zero-script-qa" or "Run QA"
 │  8. PostToolUse Hook (After Report Creation)                     │
 │                                                                 │
 │  [[../../agents/qa-monitor|qa-monitor]]                             │
-│  → qa-monitor-post.js                                           │
+│  → (qa-monitor-post.js removed — QA notification now in unified-write-post chain)                                           │
 │                                                                 │
 │  • If critical issues:                                          │
 │    "🚨 Critical issues detected!"                               │
@@ -176,7 +176,7 @@ Run /pdca-iterate for auto-fix?
 | Timing | Hook | Script | Action |
 |--------|------|--------|--------|
 | Before Bash execution | PreToolUse | unified-bash-pre.js | Block destructive commands |
-| After report Write | PostToolUse | qa-monitor-post.js | Critical issue notification |
+| After report Write | PostToolUse | (qa-monitor-post.js removed — QA notification now in unified-write-post chain) | Critical issue notification |
 | On QA session end | Stop | qa-stop.js | Next steps guidance |
 
 ---
@@ -206,7 +206,7 @@ Patterns blocked by `unified-bash-pre.js`:
 - [ ] Verify guidance message when docker compose is not running
 - [ ] Verify destructive command blocking (test with rm -rf)
 - [ ] Verify immediate report on ERROR log detection
-- [ ] Verify qa-monitor-post.js fires after report creation
+- [ ] Verify (qa-monitor-post.js removed — QA notification now in unified-write-post chain) fires after report creation
 - [ ] Verify /pdca-iterate recommendation when critical issues exist
 - [ ] Verify qa-stop.js fires on session end
 

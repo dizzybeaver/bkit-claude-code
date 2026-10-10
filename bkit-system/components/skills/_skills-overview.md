@@ -92,7 +92,7 @@ Skills form bkit's **Domain Knowledge Layer**, designed according to [[../../phi
 
 ## Skill Classification (v1.6.0)
 
-All 43 skills are classified into three categories based on CC 2.1.0 Skills 2.0 (per `evals/config.json` SSOT):
+All 44 skills are classified into three categories based on CC 2.1.0 Skills 2.0 (per `evals/config.json` SSOT):
 
 ### Workflow Skills (18) — Permanent Core Value
 
@@ -242,8 +242,8 @@ The following skills were consolidated:
 
 | Removed Skill | Merged Into |
 |---------------|-------------|
-| `task-classification` | `lib/common.js` |
-| `level-detection` | `lib/common.js` |
+| `task-classification` | consolidated (was `lib/common.js`, removed in v2.x restructure; logic now in `lib/core/` + `lib/control/`) |
+| `level-detection` | consolidated (was `lib/common.js`; see `lib/control/trust-engine.js` level gates) |
 | `pdca-methodology` | `bkit-rules` |
 | `document-standards` | `bkit-templates` |
 | `evaluator-optimizer` | `/pdca-iterate` command |

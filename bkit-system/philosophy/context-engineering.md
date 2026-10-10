@@ -101,7 +101,7 @@ bkit is a **practical implementation of Context Engineering**, providing a syste
 | `lib/quality/` | 3 | 20+ | Gate manager (7 gates), metrics collector (M1-M16), regression guard |
 | `lib/adapters/` | 0 | 0 | Reserved for future platform adapters |
 | **Top-level** | 7 | 63 | context-fork, context-hierarchy, import-resolver, memory-store, permission-manager, skill-orchestrator, common (bridge) |
-| `lib/context/` | 7 | 30+ | Living Context loader, invariant checker, impact analyzer, scenario runner, self-healing, ops metrics |
+| ~~`lib/context/`~~ | - | - | REMOVED in v2.x restructure (context-engineering functions now under `lib/application/` + `lib/core/`) |
 | **Total** | **84** | **607** | |
 
 ### v2.0.0 New Modules (vs v1.6.x)
@@ -120,11 +120,11 @@ bkit is a **practical implementation of Context Engineering**, providing a syste
 
 ---
 
-## Domain Knowledge Layer (43 Skills)
+## Domain Knowledge Layer (44 Skills)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    Domain Knowledge Layer (43 Skills)                    │
+│                    Domain Knowledge Layer (44 Skills)                    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐  │

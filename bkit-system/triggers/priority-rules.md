@@ -11,7 +11,7 @@ Order follows definition order (alphabetical file order or frontmatter definitio
 
 ```
 1. bkit-rules → pre-write.js (PDCA check + task classification)
-2. phase-2-convention → phase2-convention-pre.js
+2. phase-2-convention → pre-write.js (phase2-convention-pre.js removed — consolidated)
 3. (When specific agent is active) design-validator, code-analyzer
 ```
 

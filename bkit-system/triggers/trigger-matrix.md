@@ -50,7 +50,7 @@ These hooks are defined in skill YAML frontmatter:
 
 | Tool | Skill/Agent | Script | Action |
 |------|-------------|--------|--------|
-| `Write` | [[../agents/design-validator|design-validator]] | `design-validator-pre.js` | Design document checklist |
+| `Write` | [[../agents/design-validator|design-validator]] | ~~`design-validator-pre.js`~~ REMOVED | Design document checklist (agent-dispatched, no pre-hook) |
 | `Write\|Edit` | [[../agents/code-analyzer|code-analyzer]] | (block) | Code analyzer is read-only |
 | `Bash` | [[../../skills/zero-script-qa/SKILL|zero-script-qa]] | `unified-bash-pre.js` | Block destructive commands |
 | `Bash` | [[../../skills/phase-9-deployment/SKILL|phase-9-deployment]] | `phase9-deploy-pre.js` | Environment validation |
@@ -59,9 +59,9 @@ These hooks are defined in skill YAML frontmatter:
 
 | Tool | Skill/Agent | Script | Action |
 |------|-------------|--------|--------|
-| `Write` | [[../../skills/phase-5-design-system/SKILL|phase-5-design-system]] | `phase5-design-post.js` | Design token verification |
-| `Write` | [[../../skills/phase-6-ui-integration/SKILL|phase-6-ui-integration]] | `phase6-ui-post.js` | UI layer separation check |
-| `Write` | [[../agents/qa-monitor|qa-monitor]] | `qa-monitor-post.js` | Critical issue notification |
+| `Write` | [[../../skills/phase-5-design-system/SKILL|phase-5-design-system]] | ~~`phase5-design-post.js`~~ REMOVED | Design token verification (skill-dispatched) |
+| `Write` | [[../../skills/phase-6-ui-integration/SKILL|phase-6-ui-integration]] | ~~`phase6-ui-post.js`~~ REMOVED | UI layer separation check (skill-dispatched) |
+| `Write` | [[../agents/qa-monitor|qa-monitor]] | ~~`qa-monitor-post.js`~~ REMOVED | Critical issue notification (moved into unified-write-post chain) |
 
 #### Stop
 
@@ -82,10 +82,10 @@ These hooks are defined in skill YAML frontmatter:
 
 | Skill | Script | Status |
 |-------|--------|--------|
-| [[../../skills/phase-1-schema/SKILL|phase-1-schema]] | `phase1-schema-stop.js` | Script ready, hook not connected |
-| [[../../skills/phase-2-convention/SKILL|phase-2-convention]] | `phase2-convention-stop.js` | Script ready, hook not connected |
-| [[../../skills/phase-3-mockup/SKILL|phase-3-mockup]] | `phase3-mockup-stop.js` | Script ready, hook not connected |
-| [[../../skills/phase-7-seo-security/SKILL|phase-7-seo-security]] | `phase7-seo-stop.js` | Script ready, hook not connected |
+| [[../../skills/phase-1-schema/SKILL|phase-1-schema]] | ~~`phase1-schema-stop.js`~~ REMOVED | Script removed (consolidated into unified-stop) |
+| [[../../skills/phase-2-convention/SKILL|phase-2-convention]] | ~~`phase2-convention-stop.js`~~ REMOVED | Script removed (consolidated into unified-stop) |
+| [[../../skills/phase-3-mockup/SKILL|phase-3-mockup]] | ~~`phase3-mockup-stop.js`~~ REMOVED | Script removed (consolidated into unified-stop) |
+| [[../../skills/phase-7-seo-security/SKILL|phase-7-seo-security]] | ~~`phase7-seo-stop.js`~~ REMOVED | Script removed (consolidated into unified-stop) |
 
 > **Note**: Scripts added in v1.4.0, but hooks frontmatter not yet added to corresponding SKILL.md files.
 
@@ -107,9 +107,9 @@ When user writes/edits source code files:
 3. PostToolUse Stage (Skill Frontmatter)
    ├── unified-write-post.js
    │   └── Suggest gap analysis (if design doc exists)
-   ├── phase-5-design-system (phase5-design-post.js)
+   ├── phase-5-design-system (post hook removed)
    │   └── Verify design tokens (if UI file: .tsx, .jsx, .vue, .svelte)
-   └── phase-6-ui-integration (phase6-ui-post.js)
+   └── phase-6-ui-integration (post hook removed)
        └── Verify layer separation (if UI file or pages/components/features path)
 ```
 

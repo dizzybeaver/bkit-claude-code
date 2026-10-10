@@ -348,16 +348,16 @@ PreCompact (when context limit reached) (v1.4.2)
 
 | Hook | Script | Dependencies |
 |------|--------|--------------|
-| SessionStart | `session-start.js` | `lib/common.js` (→ `lib/core/`, `lib/pdca/`, `lib/intent/`) |
-| UserPromptSubmit | `user-prompt-handler.js` | `lib/common.js` (→ `lib/intent/`) |
-| PreToolUse | `pre-write.js` | `lib/common.js` (→ `lib/pdca/`, `lib/task/`) |
-| PostToolUse | `unified-write-post.js` | `lib/common.js` (→ `lib/pdca/`) |
-| PreCompact | `context-compaction.js` | `lib/common.js` (→ `lib/pdca/`) |
-| Stop (gap-detector) | `gap-detector-stop.js` | `lib/common.js` (→ `lib/task/`) |
-| Stop (iterator) | `iterator-stop.js` | `lib/common.js` (→ `lib/task/`) |
-| Stop (pdca-skill) | `pdca-skill-stop.js` | `lib/common.js` (→ `lib/task/`) |
+| SessionStart | `session-start.js` | `lib/core/`, `lib/pdca/`, `lib/intent/` (direct; `lib/common.js` bridge removed in v2.x restructure) |
+| UserPromptSubmit | `user-prompt-handler.js` | `lib/intent/` (direct) |
+| PreToolUse | `pre-write.js` | `lib/pdca/`, `lib/task/`, `lib/core/` (direct) |
+| PostToolUse | `unified-write-post.js` | `lib/pdca/` (direct) |
+| PreCompact | `context-compaction.js` | `lib/core/`, `lib/pdca/` (direct) |
+| Stop (gap-detector) | `gap-detector-stop.js` | `lib/task/` (direct) |
+| Stop (iterator) | `iterator-stop.js` | `lib/task/` (direct) |
+| Stop (pdca-skill) | `pdca-skill-stop.js` | `lib/task/`, `lib/pdca/` (direct) |
 
-**Note (v1.4.7)**: `lib/common.js` acts as Migration Bridge, re-exporting all modules for backward compatibility.
+**Note**: the v1.4.7 `lib/common.js` Migration Bridge (re-exporting all modules) was REMOVED in the v2.x lib/ restructure — hooks now require `lib/core/`, `lib/control/`, `lib/pdca/`, `lib/task/` modules directly.
 
 ## Additional Scripts (Not in hooks.json)
 
@@ -408,7 +408,8 @@ These scripts are available for skill frontmatter hooks or manual use:
 
 ```javascript
 #!/usr/bin/env node
-const { readStdinSync, parseHookInput, outputAllow, outputBlock } = require('../lib/common.js');
+// v2.x: bridge removed; helpers come from lib/core modules, e.g.
+const { readJsonStdin } = require('../lib/core/io');
 
 // Read JSON input from stdin
 const input = readStdinSync();
@@ -429,7 +430,7 @@ if (condition) {
 3. `reason` required when `block`
 4. `additionalContext` is passed to Claude
 
-### Helper Functions (lib/common.js)
+### Helper Functions (was lib/common.js — now split into lib/core/)
 
 ```javascript
 outputAllow("message")   // Allow with context

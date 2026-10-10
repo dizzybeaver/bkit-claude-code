@@ -12,7 +12,7 @@ Starting v2.1.13, bkit has **two parallel workflow primitives**:
 | **Phases** | 9 (`pm → plan → design → do → check → act → qa → report → archive`) | 8 (`prd → plan → design → do → iterate → qa → report → archived`) |
 | **State machine** | 25 transitions, 9 guards (`lib/application/pdca-lifecycle/`) | 8-phase frozen enum (`lib/application/sprint-lifecycle/phases.js`) |
 | **Trust scope** | `automationLevel` 0-4 | `SPRINT_AUTORUN_SCOPE` L0-L4 |
-| **Quality gates** | M1-M10 catalog | M1-M10 + S1 dataFlow integrity (7-Layer) |
+| **Quality gates** | M1-M10 catalog (v2.1.11 era; current metric range M1-M16) | M1-M10 + S1 dataFlow integrity (7-Layer) |
 | **Iteration** | `pdca-iterator` Evaluator-Optimizer (max 5) | `iterate` phase with matchRate 100% target (max 5) |
 | **Skill** | `/pdca <action> <feature>` | `/sprint <action> <id>` |
 | **Templates** | `templates/{plan,design,analysis,report}.template.md` | `templates/sprint/{master-plan,prd,plan,design,iterate,qa,report}.template.md` |

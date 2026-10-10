@@ -41,7 +41,7 @@
 > **v1.4.5**: `/pdca archive` action, 8-language trigger completion
 > **v1.4.4**: hooks-json-integration, unified handlers (unified-stop.js, unified-bash-pre.js, etc.)
 > **v1.4.2**: Added UserPromptSubmit + PreCompact hooks, Context Engineering library modules
-> **v1.4.1**: Added Context Engineering perspective - State Management Layer via lib/common.js
+> **v1.4.1**: Added Context Engineering perspective - State Management Layer (via `lib/common.js` at the time; bridge removed in v2.x restructure — scripts require `lib/core/` + domain modules directly)
 > **v1.3.1**: All scripts converted from Bash (.sh) to Node.js (.js) for cross-platform support
 > **v1.3.0**: session-start.js enhanced with AskUserQuestion guidance (see [[../hooks/_hooks-overview]])
 
@@ -55,7 +55,7 @@ Scripts are **the actual logic executed by Hooks**.
 
 ## Context Engineering Perspective (v1.4.1)
 
-Scripts and `lib/common.js` form bkit's **State Management Layer**, implementing dynamic context injection according to [[../../philosophy/context-engineering|Context Engineering]] principles.
+Scripts and `lib/` (core + domain modules) form bkit's **State Management Layer**, implementing dynamic context injection according to [[../../philosophy/context-engineering|Context Engineering]] principles.
 
 ### Dynamic Context Injection Patterns
 
@@ -178,7 +178,7 @@ bkit-claude-code/
 | **unified-write-post.js** | PostToolUse (Write) | Guide next steps, suggest gap analysis |
 | **select-template.js** | - | Select template based on level and document type |
 
-> **Note**: Task classification logic is integrated into pre-write.js via lib/common.js
+> **Note**: Task classification logic is integrated into pre-write.js (originally via `lib/common.js`; that bridge was removed in the v2.x restructure)
 
 ### Phase Scripts (11)
 
@@ -264,8 +264,8 @@ bkit-claude-code/
 | `lib/intent/` | 4 | 19 | Language detection, triggers, ambiguity scoring |
 | `lib/task/` | 5 | 26 | Task classification, context, creation, tracking |
 | `lib/team/` | 9 | 40 | Team coordination, strategy, state-writer |
-| `lib/context/` | 7 | 30+ | Living Context loader, invariant checker, impact analyzer, scenario runner, self-healing |
-| `lib/common.js` | 1 | ~620+ | Migration Bridge (re-exports all modules) |
+| ~~`lib/context/`~~ | - | - | REMOVED in v2.x restructure (context-engineering functions now under `lib/application/` + `lib/core/`) |
+| ~~`lib/common.js`~~ | - | - | Migration Bridge REMOVED in v2.x restructure (utilities split into `lib/core/` + `lib/util/`) |
 
 **Export summary (v2.1.11 current)**: 142 modules across 16 subdirectories (audit, application, cc-regression, context, control, core, dashboard, discovery, domain, evals, i18n, infra, intent, orchestrator, pdca, qa, quality, task, team, ui) — Clean Architecture 4-Layer with 7 Port↔Adapter pairs. Historical v2.0.6 snapshot: ~620+ exports via bridge (11 subdirectories, 88 modules).
 
@@ -286,7 +286,8 @@ All scripts can require common utilities:
 
 ```javascript
 #!/usr/bin/env node
-const common = require('../lib/common.js');
+// v2.x: bridge removed; require lib/core modules directly, e.g.
+const { readJsonStdin } = require('../lib/core/io');
 
 // ═══════════════════════════════════════════════════════════════════
 // Platform Detection (v1.5.0 - Claude Code Exclusive)
