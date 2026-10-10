@@ -27,10 +27,12 @@ bkit is a practical implementation of **Context Engineering**:
 ┌─────────────────────────────────────────────────────────────────┐
 │              bkit Context Engineering Components                 │
 ├─────────────────────────────────────────────────────────────────┤
+<!-- docs-code-sync:begin -->
 │  Domain Knowledge (44 Skills)  → Structured domain knowledge     │
 │  Behavioral Rules (34 Agents)  → Role-based behavioral rules     │
-│  State Management (lib/)       → 190 modules, 22 subdirectories  │
-│  6-Layer Hook System           → 21 events, 24 blocks            │
+<!-- docs-code-sync:end -->
+│  State Management (lib/)       → 207 modules, 22 subdirectories  │
+│  6-Layer Hook System           → 21 events, 24 blocks (28 cmds)  │
 │  Clean Architecture 4-Layer    → Domain / App / Infra / Pres     │
 │  Dynamic Injection             → Conditional context selection   │
 └─────────────────────────────────────────────────────────────────┘
@@ -84,8 +86,8 @@ Core design principles and methodology:
 
 ### Removed Skills (v1.2.0)
 The following skills were consolidated:
-- ~~task-classification~~ → `lib/common.js`
-- ~~level-detection~~ → `lib/common.js`
+- ~~task-classification~~ → consolidated (original target `lib/common.js` was removed in the v2.x lib/ restructure; logic now lives under `lib/core/` + `lib/control/`)
+- ~~level-detection~~ → consolidated (same; see `lib/control/trust-engine.js` level gates)
 - ~~pdca-methodology~~ → `bkit-rules`
 - ~~document-standards~~ → `bkit-templates`
 - ~~evaluator-optimizer~~ → `/pdca-iterate` command
@@ -180,7 +182,7 @@ The following skills were consolidated:
 - [[components/hooks/_hooks-overview|PreToolUse]] - Before Write/Edit operations (defined in SKILL.md)
 - [[components/hooks/_hooks-overview|PostToolUse]] - After Write operations (defined in SKILL.md)
 
-## Scripts (49)
+## Scripts (64 top-level; 68 incl. scripts/lib + scripts/qa; +4 .sh)
 
 > **Note**: All scripts converted to Node.js (.js) in v1.3.1 for cross-platform compatibility
 >
@@ -189,30 +191,30 @@ The following skills were consolidated:
 ### Core Scripts (3)
 - `scripts/pre-write.js` - Unified PreToolUse hook (PDCA + classification + convention)
 - `scripts/unified-write-post.js` - PostToolUse guidance after Write
-- `scripts/select-template.js` - Template selection by level
+- ~~`scripts/select-template.js`~~ - REMOVED (template selection now in `lib/pdca/` + skill layer)
 
-### Phase Scripts (11)
-- `scripts/phase-transition.js` - PDCA phase transition validation (v1.4.0)
-- `scripts/phase1-schema-stop.js` - Schema phase completion (v1.4.0)
-- `scripts/phase2-convention-pre.js` - Convention check before write
-- `scripts/phase2-convention-stop.js` - Convention phase completion (v1.4.0)
-- `scripts/phase3-mockup-stop.js` - Mockup phase completion (v1.4.0)
-- `scripts/phase4-api-stop.js` - Zero Script QA after API implementation
-- `scripts/phase5-design-post.js` - Design token verification
-- `scripts/phase6-ui-post.js` - Layer separation verification
-- `scripts/phase7-seo-stop.js` - SEO/Security phase completion (v1.4.0)
-- `scripts/phase8-review-stop.js` - Review completion guidance
-- `scripts/phase9-deploy-pre.js` - Deployment environment validation
+### Phase Scripts (3 remaining of the original 11)
+- ~~`scripts/phase-transition.js`~~ - REMOVED (transitions now in `lib/pdca/state-transitions.js`)
+- ~~`scripts/phase1-schema-stop.js`~~ - REMOVED (v1.4.0 era; consolidated into unified-stop)
+- ~~`scripts/phase2-convention-pre.js`~~ - REMOVED (convention checks in `scripts/pre-write.js`)
+- ~~`scripts/phase2-convention-stop.js`~~ - REMOVED (consolidated into `scripts/unified-stop.js`)
+- ~~`scripts/phase3-mockup-stop.js`~~ - REMOVED (consolidated into `scripts/unified-stop.js`)
+- `scripts/phase4-api-stop.js` - Zero Script QA after API implementation (EXISTS)
+- ~~`scripts/phase5-design-post.js`~~ - REMOVED (consolidated)
+- ~~`scripts/phase6-ui-post.js`~~ - REMOVED (consolidated)
+- ~~`scripts/phase7-seo-stop.js`~~ - REMOVED (consolidated into `scripts/unified-stop.js`)
+- `scripts/phase8-review-stop.js` - Review completion guidance (EXISTS)
+- `scripts/phase9-deploy-pre.js` - Deployment environment validation (EXISTS)
 
 ### QA Scripts (3)
 - `scripts/unified-bash-pre.js` - QA setup before Bash
-- `scripts/qa-monitor-post.js` - QA completion guidance
-- `scripts/qa-stop.js` - QA session cleanup
+- ~~`scripts/qa-monitor-post.js`~~ - REMOVED (QA guidance moved into stop-handler chain)
+- `scripts/qa-stop.js` - QA session cleanup (EXISTS)
 
-### Agent Scripts (5)
-- `scripts/design-validator-pre.js` - Design document validation
-- `scripts/gap-detector-post.js` - Gap analysis guidance
-- `scripts/gap-detector-stop.js` - Gap detector completion
+### Agent Scripts (1 of the original 5)
+- ~~`scripts/design-validator-pre.js`~~ - REMOVED (design validation now agent-dispatched, no pre-hook)
+- ~~`scripts/gap-detector-post.js`~~ - REMOVED (gap analysis guidance moved into `scripts/pdca-skill-stop.js` chain)
+- `scripts/gap-detector-stop.js` - Gap detector completion (EXISTS)
 - `scripts/iterator-stop.js` - Iterator completion
 - `scripts/analysis-stop.js` - Analysis completion guidance
 
@@ -225,7 +227,7 @@ The following skills were consolidated:
 ## Infrastructure
 
 ### Shared Library
-- `lib/common.js` - Shared utility functions (v2.0.3, **~620+ exports** via bridge)
+- ~~`lib/common.js`~~ - REMOVED in v2.x restructure; shared utilities split into `lib/core/` (io, config, constants, paths, cache) + `lib/util/`
 
 #### Platform Detection (v1.5.0 - Claude Code Exclusive)
   - `isClaudeCode()` - Check if running in Claude Code
@@ -349,8 +351,8 @@ bkit supports languages and frameworks organized by tier:
 **Components (v2.1.13 GA, 2026-05-12)**:
 - `skills/` - 44 skills (v2.1.13 added sprint; v2.1.11 added bkit-evals, bkit-explore, pdca-watch, pdca-fast-track)
 - `agents/` - 34 agents (v2.1.13 added sprint-master-planner / sprint-orchestrator / sprint-qa-flow / sprint-report-writer)
-- `scripts/` - 61 scripts (Node.js) — v2.1.13 added sprint-handler.js (660 LOC) + sprint-memory-writer.js (138 LOC)
-- `lib/` - 22 subdirectories, 190 modules — Clean Architecture 4-Layer with 7 Port↔Adapter pairs (v2.1.13 added `lib/application/sprint-lifecycle/` 13 modules + `lib/infra/sprint/` 9 modules)
+- `scripts/` - 64 top-level scripts (68 incl. scripts/lib + scripts/qa; +4 .sh) — v2.1.13 added sprint-handler.js + sprint-memory-writer.js; scripts/audit-output-styles.js orphaned (br191)
+- `lib/` - 22 subdirectories, 207 modules — Clean Architecture 4-Layer with 7 Port↔Adapter pairs (v2.1.13 added `lib/application/sprint-lifecycle/` 13 modules + `lib/infra/sprint/` 9 modules)
 - `templates/` - 40 templates (v2.1.13 added 7 sprint templates: master-plan/prd/plan/design/iterate/qa/report)
 - `output-styles/` - 4 styles
 - `servers/` - 2 MCP servers (bkit-pdca: 13 tools, bkit-analysis: 6 tools = **19 tools total**, registered via `lib/infra/mcp-port-registry.js`. v2.1.13 added bkit_sprint_list / bkit_sprint_status / bkit_master_plan_read)

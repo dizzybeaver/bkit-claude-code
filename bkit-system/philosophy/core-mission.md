@@ -148,7 +148,9 @@ After:  L0-L4 levels + trust score + emergency stop → Controllable AI
 
 > **v2.1.1**: AI Native Development OS — Declarative PDCA state machine, YAML workflow DSL,
 > L0-L4 controllable AI, CLI dashboard, audit logging, quality gates, MCP servers,
-> checkpoint/rollback, destructive operation detection, 43 Skills, 36 Agents, 21 Hook Events (24 blocks), 142 Lib modules (16 subdirs Clean Architecture 4-Layer with 7 Port↔Adapter pairs), 49 Scripts, 2 MCP Servers (16 tools). BKIT_VERSION SSoT: `bkit.config.json`.
+<!-- docs-code-sync:begin -->
+> checkpoint/rollback, destructive operation detection, 44 Skills, 34 Agents, 21 Hook Events (24 hook blocks), 207 Lib modules (22 subdirs, Clean Architecture 4-Layer with 7 Port↔Adapter pairs), 64 Scripts, 2 MCP Servers (19 tools). BKIT_VERSION SSoT: `bkit.config.json`.
+<!-- docs-code-sync:end -->
 
 ### Component Counts
 
@@ -159,7 +161,7 @@ After:  L0-L4 levels + trust score + emergency stop → Controllable AI
 | Hook Events | 21 | `hooks/hooks.json` |
 | Hook Scripts | 42 | `hooks/`, `scripts/` |
 | lib/ Modules | 128 files across 15 subdirs (Clean Architecture 4-Layer: Domain/Application/Infrastructure/Presentation) | `lib/` |
-| MCP Servers | 2 (16 tools) | `servers/` |
+| MCP Servers | 2 (19 tools) | `servers/` |
 | Workflow Presets | 3 (default, enterprise, hotfix) | `.bkit/workflows/` |
 | Output Styles | 4 | `output-styles/` |
 | Tests | 194 files (~4,028 TC) | `test/` |
