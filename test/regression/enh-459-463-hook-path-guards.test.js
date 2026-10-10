@@ -38,11 +38,46 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(PROJECT_ROOT, 'scripts', 'unified-bash-pre.js');
+
+/*
+ * br045: the spawned hook children resolve PROJECT_DIR from their own env and
+ * read/write the ambient control-state.json — the ENH-298 push guard ("L4
+ * requires explicit confirmation for any push") is level-gated ambient behavior
+ * that leaks into what is a DECISION CLASSIFIER suite (HP-01/HP-12 expect
+ * ordinary pushes ALLOWED). Every spawn is pointed at a sandbox dir seeded with
+ * a level-2 (SEMI_AUTO, DEFAULT_LEVEL) state — the level at which the push
+ * guard does not fire. No assertion here depends on L4.
+ */
+const SANDBOX_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hook-path-guards-'));
+fs.mkdirSync(path.join(SANDBOX_DIR, '.bkit', 'runtime'), { recursive: true });
+fs.writeFileSync(path.join(SANDBOX_DIR, '.bkit', 'runtime', 'control-state.json'), JSON.stringify({
+  version: '1.0',
+  currentLevel: 2,
+  levelCode: 2,
+  level: 'semi-auto',
+  previousLevel: null,
+  levelChangedAt: '2026-01-01T00:00:00.000Z',
+  levelChangeReason: 'br045 sandbox seed (SEMI_AUTO default)',
+  trustScore: 50,
+  setBy: 'runtime',
+  sessionStats: {
+    approvals: 0, rejections: 0, modifications: 0,
+    destructiveBlocked: 0, checkpointsCreated: 0, rollbacksPerformed: 0,
+  },
+  emergencyStop: false,
+  cooldownUntil: null,
+  lastEscalation: null,
+}, null, 2));
+const realStatePath = path.join(PROJECT_ROOT, '.bkit', 'runtime', 'control-state.json');
+let realStateBefore = null;
+try { realStateBefore = fs.readFileSync(realStatePath, 'utf8'); } catch (_) { /* absent is fine */ }
 
 let passed = 0;
 let failed = 0;
@@ -81,7 +116,11 @@ function hook(command) {
     cwd: '/tmp',
     session_id: 'hook-path-regression',
   });
-  const r = spawnSync('node', [HOOK], { input: payload, encoding: 'utf8', timeout: 30000 });
+  // br045: state reads/writes land in the sandbox, not the real project dir.
+  const r = spawnSync('node', [HOOK], {
+    input: payload, encoding: 'utf8', timeout: 30000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: SANDBOX_DIR },
+  });
   const out = (r.stdout || '').trim();
   let json = null;
   try { json = JSON.parse(out.split('\n').filter(Boolean).pop() || ''); } catch (_) { /* allow path is plain text */ }
@@ -206,7 +245,11 @@ function writeHook(toolName, filePath, content) {
     cwd: '/tmp',
     session_id: 'hook-path-regression',
   });
-  const r = spawnSync('node', [PRE_WRITE], { input: payload, encoding: 'utf8', timeout: 30000 });
+  // br045: state reads/writes land in the sandbox, not the real project dir.
+  const r = spawnSync('node', [PRE_WRITE], {
+    input: payload, encoding: 'utf8', timeout: 30000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: SANDBOX_DIR },
+  });
   const out = (r.stdout || '').trim();
   let json = null;
   try { json = JSON.parse(out.split('\n').filter(Boolean).pop() || ''); } catch (_) {}
@@ -243,6 +286,20 @@ test('HP-34 real environment files are still refused (ENH-464 stays narrow)', ()
     assert.notEqual(decision, 'allow', `${f} must not be writable without a decision`);
   }
 });
+
+// br045 redirection proof: the sandboxed hook children must not have touched
+// the real control-state.json (absence-tolerant byte-compare).
+{
+  const realStateAfter = fs.existsSync(realStatePath) ? fs.readFileSync(realStatePath, 'utf8') : null;
+  if (realStateBefore === realStateAfter) {
+    passed++;
+    console.log('  ✓ br045 redirection proof — real control-state.json untouched by the sandboxed hook runs');
+  } else {
+    failed++;
+    console.log('  ✗ br045 redirection proof — real control-state.json changed during the suite');
+  }
+  fs.rmSync(SANDBOX_DIR, { recursive: true, force: true });
+}
 
 console.log(`\n--- Results: ${passed}/${passed + failed} passed, ${failed} failed ---`);
 if (failed > 0) process.exit(1);

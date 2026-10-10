@@ -30,10 +30,45 @@
  */
 
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const HOOK = path.join(__dirname, '..', '..', 'scripts', 'unified-bash-pre.js');
+
+/*
+ * br045: this suite spawns the hook, whose children resolve PROJECT_DIR from
+ * their own env and read/write the ambient control-state.json — the ENH-298
+ * push guard ("L4 requires explicit confirmation for any push") is level-gated
+ * ambient behavior that leaks into what is a DECISION CLASSIFIER test. Each
+ * spawn is pointed at a sandbox dir seeded with a level-2 (SEMI_AUTO,
+ * DEFAULT_LEVEL) state, the level at which the push guard does not fire and
+ * these assertions test what they mean. No assertion here depends on L4.
+ */
+const SANDBOX_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-pre-decision-'));
+fs.mkdirSync(path.join(SANDBOX_DIR, '.bkit', 'runtime'), { recursive: true });
+fs.writeFileSync(path.join(SANDBOX_DIR, '.bkit', 'runtime', 'control-state.json'), JSON.stringify({
+  version: '1.0',
+  currentLevel: 2,
+  levelCode: 2,
+  level: 'semi-auto',
+  previousLevel: null,
+  levelChangedAt: '2026-01-01T00:00:00.000Z',
+  levelChangeReason: 'br045 sandbox seed (SEMI_AUTO default)',
+  trustScore: 50,
+  setBy: 'runtime',
+  sessionStats: {
+    approvals: 0, rejections: 0, modifications: 0,
+    destructiveBlocked: 0, checkpointsCreated: 0, rollbacksPerformed: 0,
+  },
+  emergencyStop: false,
+  cooldownUntil: null,
+  lastEscalation: null,
+}, null, 2));
+const realStatePath = path.join(__dirname, '..', '..', '.bkit', 'runtime', 'control-state.json');
+let realStateBefore = null;
+try { realStateBefore = fs.readFileSync(realStatePath, 'utf8'); } catch (_) { /* absent is fine */ }
 
 let pass = 0;
 const failures = [];
@@ -51,7 +86,8 @@ function decide(command) {
     input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
     encoding: 'utf8',
     timeout: 20000,
-    env: { ...process.env, BKIT_HOOK_DISPATCH_RECORD: '0' },
+    // br045: state reads/writes land in the sandbox, not the real project dir.
+    env: { ...process.env, BKIT_HOOK_DISPATCH_RECORD: '0', CLAUDE_PROJECT_DIR: SANDBOX_DIR },
   });
   const raw = (res.stdout || '').trim();
   let parsed = null;
@@ -206,6 +242,15 @@ test('NEGATIVE CONTROL — the ask tier is reachable at all', () => {
       + 'pre-v2.1.34 state: ten rules declaring "ask" and none of them asking.'
   );
 });
+
+// br045 redirection proof: the sandboxed hook children must not have touched
+// the real control-state.json (absence-tolerant byte-compare).
+test('br045 redirection proof — real control-state.json untouched', () => {
+  const realStateAfter = fs.existsSync(realStatePath) ? fs.readFileSync(realStatePath, 'utf8') : null;
+  assert.strictEqual(realStateAfter, realStateBefore,
+    'real control-state.json changed during the suite — the sandbox did not redirect');
+});
+fs.rmSync(SANDBOX_DIR, { recursive: true, force: true });
 
 if (failures.length > 0) {
   console.error(`\n✗ bash-pre-decision: ${failures.length} failing assertion(s)`);

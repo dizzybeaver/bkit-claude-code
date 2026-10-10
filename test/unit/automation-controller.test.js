@@ -15,6 +15,34 @@ try {
 let passed = 0, failed = 0, total = 0, skipped = 0;
 const failures = [];
 
+// br045: state-mutating probes run against a throwaway CLAUDE_PROJECT_DIR so the
+// REAL .bkit/runtime/control-state.json is never touched (the AC-008
+// setLevel('manual') write was a direct real-state poisoner).
+// NOTE: the purge regex MUST cover the lib/core/index.js BARREL — getCore()
+// memoizes require('../core'), and a barrel loaded before the sandbox pins a
+// stale platform instance with the real PROJECT_DIR.
+function purgeCache(re) {
+  Object.keys(require.cache).forEach(k => { if (re.test(k)) delete require.cache[k]; });
+}
+const CTRL_PURGE = /lib\/(core\/|control\/automation-controller)/;
+function withSandboxedController(fn) {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const saved = process.env.CLAUDE_PROJECT_DIR;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-unit-sandbox-'));
+  try {
+    process.env.CLAUDE_PROJECT_DIR = tmp;
+    purgeCache(CTRL_PURGE);
+    const sandboxed = require('../../lib/control/automation-controller');
+    fn(sandboxed);
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = saved;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    purgeCache(CTRL_PURGE); // later suites re-require the REAL controller
+  }
+}
+
 function assert(id, condition, message) {
   total++;
   if (condition) { passed++; console.log(`  PASS: ${id} - ${message}`); }
@@ -52,41 +80,36 @@ assert('AC-005', AUTOMATION_LEVELS.FULL_AUTO === 4, 'AUTOMATION_LEVELS.FULL_AUTO
   }
 }
 
-{
+// AC-007~010: sandboxed (br045) — these setLevel calls wrote the REAL state file.
+withSandboxedController((m) => {
   try {
-    const result = setLevel(3, { reason: 'test' });
+    const result = m.setLevel(3, { reason: 'test' });
     assert('AC-007', result.success === true && result.newLevel === 3, 'setLevel(3) succeeds');
   } catch (e) {
     skip('AC-007', 'setLevel requires core module: ' + e.message);
   }
-}
 
-{
   try {
-    const result = setLevel('manual', { reason: 'test' });
+    const result = m.setLevel('manual', { reason: 'test' });
     assert('AC-008', result.success === true && result.newLevel === 0, 'setLevel("manual") resolves to 0');
   } catch (e) {
     skip('AC-008', 'setLevel requires core module: ' + e.message);
   }
-}
 
-{
   try {
-    const result = setLevel(99);
+    const result = m.setLevel(99);
     assert('AC-009', result.success === false, 'setLevel(99) fails for invalid level');
   } catch (e) {
     skip('AC-009', 'setLevel requires core module: ' + e.message);
   }
-}
 
-{
   try {
-    const result = setLevel(-1);
+    const result = m.setLevel(-1);
     assert('AC-010', result.success === false, 'setLevel(-1) fails for negative level');
   } catch (e) {
     skip('AC-010', 'setLevel requires core module: ' + e.message);
   }
-}
+});
 
 // --- AC-011~015: canAutoAdvance per phase/level combo ---
 
@@ -106,19 +129,20 @@ assert('AC-020', isDestructiveAllowed('git_push', 3) === 'allow', 'git_push allo
 
 // --- AC-021~025: emergencyStop/emergencyResume ---
 
-{
+// AC-021~024: sandboxed (br045) — setLevel + emergencyStop/Resume mutate state.
+withSandboxedController((m) => {
   try {
     // First set a known level
-    setLevel(3, { reason: 'pre-emergency' });
-    const stopResult = emergencyStop('test emergency');
+    m.setLevel(3, { reason: 'pre-emergency' });
+    const stopResult = m.emergencyStop('test emergency');
     assert('AC-021', typeof stopResult.previousLevel === 'number', 'emergencyStop returns previousLevel');
     assert('AC-022', typeof stopResult.fallbackLevel === 'number' && stopResult.fallbackLevel <= stopResult.previousLevel, 'emergencyStop drops to fallbackLevel');
 
-    const resumeResult = emergencyResume();
+    const resumeResult = m.emergencyResume();
     assert('AC-023', resumeResult.success === true, 'emergencyResume succeeds after stop');
 
     // Double resume should fail
-    const doubleResume = emergencyResume();
+    const doubleResume = m.emergencyResume();
     assert('AC-024', doubleResume.success === false, 'emergencyResume fails when not in emergency');
   } catch (e) {
     skip('AC-021', 'emergencyStop requires core module: ' + e.message);
@@ -126,7 +150,7 @@ assert('AC-020', isDestructiveAllowed('git_push', 3) === 'allow', 'git_push allo
     skip('AC-023', 'emergencyResume requires core module: ' + e.message);
     skip('AC-024', 'emergencyResume requires core module: ' + e.message);
   }
-}
+});
 
 // Static checks
 assert('AC-025', typeof LEVEL_DEFINITIONS === 'object' && Object.keys(LEVEL_DEFINITIONS).length === 5, 'LEVEL_DEFINITIONS has 5 entries (L0-L4)');

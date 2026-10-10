@@ -64,9 +64,29 @@ assert('SB-003',
 );
 
 // --- SB-004: getRuntimeState currentLevel matches DEFAULT_LEVEL ---
-// Reset to default before checking (previous tests in suite may have changed level)
-automationController.setLevel(automationController.DEFAULT_LEVEL, { reason: 'test-reset' });
-const initState = automationController.getRuntimeState();
+// Reset to default before checking (previous tests in suite may have changed level).
+// br045: the reset+read pair used to write the REAL .bkit/runtime/control-state.json;
+// it now runs against a throwaway CLAUDE_PROJECT_DIR. Assertion semantics unchanged:
+// a fresh controller in an empty project dir starts at DEFAULT_LEVEL by construction.
+// The purge MUST cover the lib/core/index.js BARREL — getCore() memoizes
+// require('../core'), and a barrel loaded earlier pins a stale platform PROJECT_DIR.
+const initState = (() => {
+  const os = require('os');
+  const purgeLocal = (re) => Object.keys(require.cache).forEach(k => { if (re.test(k)) delete require.cache[k]; });
+  const savedDir = process.env.CLAUDE_PROJECT_DIR;
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sb004-sandbox-'));
+  try {
+    process.env.CLAUDE_PROJECT_DIR = tmpRoot;
+    purgeLocal(/lib\/(core\/|control\/automation-controller)/);
+    const sandboxed = require('../../lib/control/automation-controller');
+    sandboxed.setLevel(sandboxed.DEFAULT_LEVEL, { reason: 'test-reset' });
+    return sandboxed.getRuntimeState();
+  } finally {
+    if (savedDir === undefined) delete process.env.CLAUDE_PROJECT_DIR; else process.env.CLAUDE_PROJECT_DIR = savedDir;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    purgeLocal(/lib\/(core\/|control\/automation-controller)/);
+  }
+})();
 assert('SB-004',
   initState.currentLevel === automationController.DEFAULT_LEVEL,
   'getRuntimeState.currentLevel matches DEFAULT_LEVEL (consistent defaults)'
