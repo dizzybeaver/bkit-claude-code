@@ -37,9 +37,16 @@ if [[ -n "${BKIT_CACHE_VERSION:-}" ]]; then
 else
   CACHE_VER="$(ls -1 "${CACHE_BASE}" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1 || true)"
 fi
+if [[ -z "${CACHE_VER}" ]]; then
+  # Retry once: a marketplace plugin update can transiently replace the
+  # cache dir, making auto-detect see nothing (observed 2026-10-09).
+  sleep 2
+  CACHE_VER="$(ls -1 "${CACHE_BASE}" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1 || true)"
+fi
 if [[ -z "${CACHE_VER}" || ! -d "${CACHE_BASE}/${CACHE_VER}" ]]; then
   echo "ERROR: no plugin cache version dir found under ${CACHE_BASE}" >&2
   echo "       (tried BKIT_CACHE_VERSION='${BKIT_CACHE_VERSION:-<auto>}')" >&2
+  echo "       cache dir contents: $(ls -1A "${CACHE_BASE}" 2>&1 | head -10 | tr '\n' ' ')" >&2
   exit 1
 fi
 CACHE_ROOT="${CACHE_BASE}/${CACHE_VER}"
