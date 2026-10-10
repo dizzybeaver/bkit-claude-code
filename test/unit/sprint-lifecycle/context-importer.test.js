@@ -77,11 +77,35 @@ test('TC-F3-2-I8: defaultContext — 5 empty fields', () => {
   for (const k of Object.keys(d)) assert.equal(d[k], '');
 });
 
-asyncTest('TC-F3-2-I9: resolveContext — master-plan exists (live v2119)', async () => {
-  const r = await ci.resolveContext('v2119-bkit-quality-maturation', { projectRoot: PROJECT_ROOT });
-  assert.equal(r.source, 'master-plan');
-  assert.ok(r.filePath.includes('master-plan.md'));
-  assert.ok(r.context.WHY.length > 0);
+asyncTest('TC-F3-2-I9: resolveContext — master-plan exists (hermetic fixture)', async () => {
+  // br046-carry-zero: the repo's real master plans are ARCHIVED now, so this
+  // TC depended on live repo doc layout and broke when the archive ran. It is
+  // a finder test, not a layout test — seed a hermetic project root instead.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-importer-'));
+  try {
+    const planDir = path.join(tmp, 'docs', '01-plan', 'features');
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, 'v2119-bkit-quality-maturation.master-plan.md'), [
+      '# Sprint Master Plan',
+      '',
+      '## Context Anchor',
+      '',
+      '| Key | Value |',
+      '|-----|-------|',
+      '| **WHY** | hermetic fixture anchor for the finder test |',
+      '| **WHO** | Maintainer |',
+      '| **RISK** | none |',
+      '| **SUCCESS** | finder resolves from sandbox |',
+      '| **SCOPE** | this file only |',
+      '',
+    ].join('\n'));
+    const r = await ci.resolveContext('v2119-bkit-quality-maturation', { projectRoot: tmp });
+    assert.equal(r.source, 'master-plan');
+    assert.ok(r.filePath.includes('master-plan.md'));
+    assert.ok(r.context.WHY.length > 0);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 asyncTest('TC-F3-2-I10: resolveContext — neither exists → default', async () => {

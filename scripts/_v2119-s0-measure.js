@@ -148,12 +148,39 @@ function findFirstMatching(dirRelative, regexStr) {
   return null;
 }
 
+/**
+ * br046-carry-zero follow-up: master plans are ARCHIVED by lifecycle now
+ * (tools/doc-archive moves docs/01-plan/features/<f>.master-plan.md to
+ * docs/archive/<era>/<f>/ once the cycle closes). A historical release's
+ * master plan therefore usually lives in the archive, so the sprint
+ * self-dogfood measure must look there too — live dir first, then every
+ * docs/archive/<era>/<feature>/ folder.
+ */
+function findFirstMatchingInArchive(regexStr) {
+  const archiveRoot = path.join(ROOT, 'docs', 'archive');
+  if (!fs.existsSync(archiveRoot)) return null;
+  const re = new RegExp('^' + regexStr + '$');
+  for (const era of fs.readdirSync(archiveRoot)) {
+    const eraDir = path.join(archiveRoot, era);
+    if (!fs.statSync(eraDir).isDirectory()) continue;
+    for (const feature of fs.readdirSync(eraDir)) {
+      const featureDir = path.join(eraDir, feature);
+      if (!fs.statSync(featureDir).isDirectory()) continue;
+      for (const f of fs.readdirSync(featureDir)) {
+        if (re.test(f)) return path.join(featureDir, f);
+      }
+    }
+  }
+  return null;
+}
+
 function collectSprintRunsData(versions = ['v2.1.14', 'v2.1.15', 'v2.1.16', 'v2.1.17', 'v2.1.18']) {
   return {
     releases: versions.map(v => {
       // version "v2.1.14" → prefix "v2114"
       const compact = 'v' + v.replace(/^v/, '').replace(/\./g, '');
-      const masterPlan = findFirstMatching('docs/01-plan/features', `${compact}-.*\\.master-plan\\.md`);
+      let masterPlan = findFirstMatching('docs/01-plan/features', `${compact}-.*\\.master-plan\\.md`);
+      if (!masterPlan) masterPlan = findFirstMatchingInArchive(`${compact}-.*\\.master-plan\\.md`);
       const sprintState = findFirstMatching('.bkit/state/sprints', `${compact}-.*\\.json`);
       let archived = false;
       if (sprintState) {

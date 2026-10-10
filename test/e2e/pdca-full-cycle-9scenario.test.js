@@ -97,7 +97,10 @@ test('[3/9] Design — Design path convention + Architecture Options invariant',
   // lifecycle, so a test naming a single artifact fails every time the archive
   // runs — while the invariant it is actually named for, that design documents
   // live at docs/02-design/features/<feature>.design.md, keeps holding.
-  const designDocs = fs.readdirSync(designDir).filter((f) => f.endsWith('.design.md'));
+  // br046 round 5: the convention is bilingual — `<base>.design.en.md` /
+  // `<base>.design.ko.md` (project CLAUDE.md docs rule) — so count both
+  // spellings, not just the bare `.design.md` ending.
+  const designDocs = fs.readdirSync(designDir).filter((f) => /\.design(\.(en|ko))?\.md$/.test(f));
   assert.ok(designDocs.length > 0,
     'docs/02-design/features must contain at least one <feature>.design.md');
 });
