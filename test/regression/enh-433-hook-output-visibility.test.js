@@ -43,6 +43,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const IO_PATH = path.join(__dirname, '..', '..', 'lib', 'core', 'io.js');
+const OUTPUT_PATH = path.join(__dirname, '..', '..', 'lib', 'core', '_io', 'output.js');
 
 /**
  * Emit through a child process so the real stdout is observed rather than a
@@ -103,7 +104,7 @@ test('the visibility sets are stated once, not rediscovered per call site', () =
   // The rule was previously implicit in an if/else. A later call site could only
   // learn it by reading that branch and inferring why.
   const io = require('../../lib/core/io');
-  const src = require('fs').readFileSync(IO_PATH, 'utf8');
+  const src = require('fs').readFileSync(OUTPUT_PATH, 'utf8');
   assert.match(src, /STDOUT_REACHES_MODEL/, 'the measured set must be named');
   assert.match(src, /CONTEXT_CHANNEL_EVENTS/, 'the measured set must be named');
   // And the behaviour must follow the sets, which the cases above assert.
