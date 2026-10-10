@@ -47,7 +47,18 @@ function markerPath() {
  */
 function isFirstRun() {
   try {
-    return !fs.existsSync(markerPath());
+    const marker = markerPath();
+    if (!fs.existsSync(marker)) return true;
+    // br075: honor a persisted onboarding.firstRun === false (Skip permanently)
+    try {
+      const data = JSON.parse(fs.readFileSync(marker, 'utf8'));
+      if (data && data.onboarding && data.onboarding.firstRun === false) {
+        return false;
+      }
+    } catch {
+      // unparseable marker — fall through to existence-based behavior
+    }
+    return false;
   } catch (e) {
     debugLog('SessionStart', 'first-run isFirstRun failed', { error: e.message });
     // Conservative fallback: when the FS is unhealthy, treat as NOT first-run
@@ -87,6 +98,10 @@ function markFirstRunSeen(response) {
       version: bkitVersion,
       seenAt: new Date().toISOString(),
       tutorialResponse: response,
+      // br075: 'Skip permanently' must persist onboarding.firstRun = false.
+      // There is no config setter API (lib/core/config.js is read-only getters),
+      // so the preference lives in this marker file, which isFirstRun() honors.
+      onboarding: { firstRun: response !== 'skip' },
       ccVersionAtFirstRun: ccVersion,
     };
     fs.writeFileSync(markerPath(), JSON.stringify(payload, null, 2) + '\n');
@@ -162,10 +177,28 @@ function run() {
   }
 }
 
+/**
+ * Record the user's AUQ answer with its real value (br075). Previously only
+ * 'shown' was ever persisted, so 'tutorial'/'later'/'skip' responses were
+ * unreachable. Callers (e.g. the prompt-response wiring) invoke this with the
+ * chosen option; 'skip' additionally persists onboarding.firstRun = false.
+ *
+ * @param {'tutorial'|'later'|'skip'} response
+ * @returns {boolean} true if marker was written
+ */
+function recordFirstRunResponse(response) {
+  if (response !== 'tutorial' && response !== 'later' && response !== 'skip') {
+    debugLog('SessionStart', 'first-run recordFirstRunResponse ignored', { response });
+    return false;
+  }
+  return markFirstRunSeen(response);
+}
+
 module.exports = {
   run,
   isFirstRun,
   markFirstRunSeen,
+  recordFirstRunResponse,
   buildFirstRunPrompt,
   markerPath,
   MARKER_REL_PATH,

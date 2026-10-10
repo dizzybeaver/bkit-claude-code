@@ -38,7 +38,7 @@ These hooks are defined in `hooks/hooks.json` and apply to **all sessions regard
 |-------|---------|--------|--------|
 | SessionStart | - | `session-start.js` | Initialize session, detect level, guide user via AskUserQuestion |
 | PreToolUse | `Write\|Edit` | `pre-write.js` | PDCA doc check, task classification, convention hints, block major features without design |
-| PostToolUse | `Write` | `pdca-post-write.js` | Suggest gap analysis after implementation |
+| PostToolUse | `Write` | `unified-write-post.js` | Suggest gap analysis after implementation |
 
 > **Note**: Global hooks ensure PDCA guidance is available. Skill-specific hooks provide additional contextual features when skills are activated.
 
@@ -52,7 +52,7 @@ These hooks are defined in skill YAML frontmatter:
 |------|-------------|--------|--------|
 | `Write` | [[../agents/design-validator|design-validator]] | `design-validator-pre.js` | Design document checklist |
 | `Write\|Edit` | [[../agents/code-analyzer|code-analyzer]] | (block) | Code analyzer is read-only |
-| `Bash` | [[../../skills/zero-script-qa/SKILL|zero-script-qa]] | `qa-pre-bash.js` | Block destructive commands |
+| `Bash` | [[../../skills/zero-script-qa/SKILL|zero-script-qa]] | `unified-bash-pre.js` | Block destructive commands |
 | `Bash` | [[../../skills/phase-9-deployment/SKILL|phase-9-deployment]] | `phase9-deploy-pre.js` | Environment validation |
 
 #### PostToolUse
@@ -105,7 +105,7 @@ When user writes/edits source code files:
 2. Actual Write/Edit Execution
 
 3. PostToolUse Stage (Skill Frontmatter)
-   ├── pdca-post-write.js
+   ├── unified-write-post.js
    │   └── Suggest gap analysis (if design doc exists)
    ├── phase-5-design-system (phase5-design-post.js)
    │   └── Verify design tokens (if UI file: .tsx, .jsx, .vue, .svelte)

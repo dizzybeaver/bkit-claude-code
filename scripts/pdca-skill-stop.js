@@ -50,7 +50,24 @@ function parsePdcaSkillArgs(rawArgs) {
   if (tokens.length === 0) return null;
   const action = tokens[0].toLowerCase();
   if (!ENVELOPE_ACTIONS.includes(action)) return null;
-  const featureToken = tokens.slice(1).find((t) => !t.startsWith('-'));
+  let featureToken = tokens.slice(1).find((t) => !t.startsWith('-'));
+  // br066: only the first whitespace token is the feature; sentence-length
+  // junk must not become a registry row (validate-name contract, br041).
+  if (featureToken) {
+    featureToken = String(featureToken).trim().split(/\s+/)[0];
+    // route through lib/pdca/validate-name.js if it exposes a validator
+    try {
+      const { normalizeFeatureName, isValidFeatureName } = require('../lib/pdca/validate-name');
+      // READ lib/pdca/validate-name.js FIRST to see its actual exports and use them
+      // correctly — the line above is the expected shape; adapt to reality.
+      if (typeof isValidFeatureName === 'function' && !isValidFeatureName(featureToken)) {
+        featureToken = undefined;
+      } else if (typeof normalizeFeatureName === 'function') {
+        const norm = normalizeFeatureName(featureToken);
+        if (norm && norm.ok) featureToken = norm.name;
+      }
+    } catch (_) { /* validator unavailable — keep first-token result */ }
+  }
   return { action, feature: featureToken || null };
 }
 

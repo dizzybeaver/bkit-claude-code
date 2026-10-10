@@ -133,7 +133,7 @@ bkit-claude-code/
 │   └── session-start.js       # SessionStart hook
 ├── scripts/
 │   ├── pre-write.js           # Core: Unified PreToolUse hook (includes task classification)
-│   ├── pdca-post-write.js     # Core: PostToolUse guidance
+│   ├── unified-write-post.js     # Core: PostToolUse guidance
 │   ├── select-template.js     # Core: Template selection
 │   │
 │   ├── phase-transition.js        # Phase: PDCA phase transition validation (v1.4.0)
@@ -148,7 +148,7 @@ bkit-claude-code/
 │   ├── phase8-review-stop.js      # Phase: Review summary
 │   ├── phase9-deploy-pre.js       # Phase: Deploy validation
 │   │
-│   ├── qa-pre-bash.js             # QA: Bash setup
+│   ├── unified-bash-pre.js             # QA: Bash setup
 │   ├── qa-monitor-post.js         # QA: Completion guidance
 │   ├── qa-stop.js                 # QA: Session cleanup
 │   │
@@ -159,7 +159,7 @@ bkit-claude-code/
 │   ├── analysis-stop.js           # Agent: Analysis completion
 │   ├── code-analyzer-pre.js       # Agent: Code analyzer read-only block (v1.4.2)
 │   │
-│   ├── archive-feature.js         # Utility: Feature archiving
+│   ├── pdca-archive.js         # Utility: Feature archiving
 │   ├── sync-folders.js            # Utility: Folder sync
 │   ├── validate-plugin.js         # Utility: Plugin validation
 │   │
@@ -175,7 +175,7 @@ bkit-claude-code/
 | Script | Hook | Purpose |
 |--------|------|---------|
 | **pre-write.js** | PreToolUse (Write\|Edit) | Unified hook: PDCA check + task classification + convention hints |
-| **pdca-post-write.js** | PostToolUse (Write) | Guide next steps, suggest gap analysis |
+| **unified-write-post.js** | PostToolUse (Write) | Guide next steps, suggest gap analysis |
 | **select-template.js** | - | Select template based on level and document type |
 
 > **Note**: Task classification logic is integrated into pre-write.js via lib/common.js
@@ -209,7 +209,7 @@ bkit-claude-code/
 
 | Script | Hook | Purpose |
 |--------|------|---------|
-| qa-pre-bash.js | PreToolUse (Bash) | Block destructive commands during QA |
+| unified-bash-pre.js | PreToolUse (Bash) | Block destructive commands during QA |
 | qa-monitor-post.js | PostToolUse | Critical issue notification |
 | qa-stop.js | Stop | QA session cleanup |
 
@@ -222,7 +222,7 @@ bkit-claude-code/
 | iterator-stop.js | Stop | pdca-iterator | Check-Act iteration: triggerNextPdcaAction (v1.4.7) |
 | pdca-skill-stop.js | Stop | pdca skill | Task Chain Auto-Creation (v1.4.7) |
 | analysis-stop.js | Stop | code-analyzer | Analysis completion guidance |
-| qa-pre-bash.js | PreToolUse | qa-monitor | Block destructive commands during QA |
+| unified-bash-pre.js | PreToolUse | qa-monitor | Block destructive commands during QA |
 | qa-monitor-post.js | PostToolUse | qa-monitor | Critical issue notification |
 
 > **Note (v1.4.7)**: `gap-detector-stop.js` and `iterator-stop.js` now use `triggerNextPdcaAction()` for automatic next phase triggering. `pdca-skill-stop.js` creates Task Chain on `/pdca plan`.
@@ -231,7 +231,7 @@ bkit-claude-code/
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| archive-feature.js | Feature archiving | `/archive` command |
+| pdca-archive.js | Feature archiving | `/archive` command |
 | sync-folders.js | Folder synchronization | Manual maintenance |
 | validate-plugin.js | Plugin validation | CI/CD or manual |
 
@@ -242,7 +242,7 @@ bkit-claude-code/
 | user-prompt-handler.js | UserPromptSubmit | User input preprocessing, agent suggestion |
 | context-compaction.js | PreCompact | PDCA state preservation during context compaction |
 
-> **Note**: pdca-pre-write.js was deprecated and deleted in v1.4.2. Its functionality is integrated into pre-write.js.
+> **Note**: pre-write.js was deprecated and deleted in v1.4.2. Its functionality is integrated into pre-write.js.
 
 ## Shared Library: lib/ (v2.0.6)
 
@@ -554,7 +554,7 @@ Actions (3 stages):
 Output: All context combined into single JSON response
 ```
 
-### qa-pre-bash.js
+### unified-bash-pre.js
 
 ```
 Trigger: Bash commands during zero-script-qa

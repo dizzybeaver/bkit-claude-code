@@ -75,9 +75,19 @@ try {
 }
 
 // --- 2. Restore: PLUGIN_DATA backup restoration ---
+// br071: capture the restore result and surface notable warnings (e.g. a
+// cross-project backup conflict from ENH-383) into additionalContext instead
+// of discarding them.
 const restore = require('./startup/restore');
+let restoreWarnings = [];
 try {
-  restore.run();
+  const restoreResult = restore.run();
+  if (restoreResult && Array.isArray(restoreResult.warnings) && restoreResult.warnings.length > 0) {
+    restoreWarnings = restoreResult.warnings;
+    for (const w of restoreWarnings) {
+      debugLog('SessionStart', 'Restore warning', { warning: w });
+    }
+  }
 } catch (e) {
   debugLog('SessionStart', 'Restore module failed', { error: e.message });
 }
@@ -106,6 +116,13 @@ try {
   additionalContext = sessionContext.build(null, onboardingContext);
 } catch (e) {
   debugLog('SessionStart', 'Session context module failed', { error: e.message });
+}
+
+// br071: surface PLUGIN_DATA restore warnings (e.g. cross-project backup
+// conflict) to the session, not just the debug log.
+if (restoreWarnings.length > 0) {
+  const restoreSection = '⚠ bkit state restore notice:\n' + restoreWarnings.map((w) => '- ' + w).join('\n');
+  additionalContext = additionalContext ? restoreSection + '\n\n' + additionalContext : restoreSection;
 }
 
 // --- v2.1.1 UI-02: Build dashboard sections in correct display order ---
@@ -342,7 +359,8 @@ const sessionTitle = generateSessionTitle({
   // ENH-419 (v2.1.33), Issue #77: SessionStart receives the title already in
   // effect — from `--name`, `/rename`, or a resumed session — and bkit must not
   // replace one the user chose. Documented at code.claude.com/docs/en/hooks.md:1039.
-  currentTitle: (typeof input === 'object' && input) ? input.session_title : undefined,
+  // br070: read the title from the hook payload variable, not an undefined `input`
+  currentTitle: (typeof hookPayload === 'object' && hookPayload) ? hookPayload.session_title : undefined,
 });
 
 // ENH-239 (Issue #81 Phase B): SHA-256 fingerprint dedup lock

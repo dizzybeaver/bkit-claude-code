@@ -37,6 +37,7 @@ const { execFileSync } = require('child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const IO_PATH = path.join(PROJECT_ROOT, 'lib', 'core', 'io.js');
+const OUTPUT_PATH = path.join(PROJECT_ROOT, 'lib', 'core', '_io', 'output.js');
 const BASH_PRE = path.join(PROJECT_ROOT, 'scripts', 'unified-bash-pre.js');
 
 let pass = 0;
@@ -66,13 +67,18 @@ function emit(snippet) {
 console.log('=== ENH-410: a block must carry its reason ===\n');
 
 // --- E410-01: outputBlock's arity is the contract every caller must respect ---
+// Since br050 the implementation lives in lib/core/_io/output.js; lib/core/io.js
+// is a wrapper that re-exports it. The contract is unchanged — only the path.
+const outputSrc = fs.readFileSync(OUTPUT_PATH, 'utf8');
 const ioSrc = fs.readFileSync(IO_PATH, 'utf8');
-const sig = ioSrc.match(/function\s+outputBlock\s*\(([^)]*)\)/);
+const sig = outputSrc.match(/function\s+outputBlock\s*\(([^)]*)\)/);
 assert('E410-01', !!sig,
   'outputBlock is no longer declared as a function — callers cannot be checked');
 const arity = sig ? sig[1].split(',').filter((s) => s.trim()).length : -1;
 assert('E410-02', arity === 1,
   `outputBlock takes ${arity} parameter(s); this test and every call site assume 1. If the signature widened deliberately, update both.`);
+assert('E410-02a', /outputBlock\s*[,:]/.test(ioSrc),
+  'lib/core/io.js wrapper must still re-export outputBlock so existing callers resolve');
 
 // --- E410-03: nobody may call outputBlock with more arguments than it accepts ---
 const OVERCALL = /\boutputBlock\s*\(\s*[^)]*?,[^)]*?\)/;

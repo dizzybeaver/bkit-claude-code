@@ -26,8 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { BKIT_PLATFORM } = require('../../lib/core/platform');
-const { detectLevel } = require('../../lib/pdca/level');
+// br072: removed unused BKIT_PLATFORM and detectLevel imports
 const { debugLog } = require('../../lib/core/debug');
 const { initPdcaStatusIfNotExists, getPdcaStatusFull } = require('../../lib/pdca/status');
 const { getBkitConfig } = require('../../lib/core/config');
@@ -123,7 +122,9 @@ function run(_input) {
     if (fs.existsSync(hooksJsonPath)) {
       const hooksConfig = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
       if (hooksConfig.hooks?.UserPromptSubmit) {
-        userPromptBugWarning = 'Warning: UserPromptSubmit hook in plugins may not trigger (GitHub #20659). Workaround: Add to ~/.claude/settings.json. See docs/TROUBLESHOOTING.md';
+        // br072: dropped stale docs/TROUBLESHOOTING.md reference (file does not exist);
+        // warning text stays actionable via the workaround sentence alone
+        userPromptBugWarning = 'Warning: UserPromptSubmit hook in plugins may not trigger (GitHub #20659). Workaround: Add to ~/.claude/settings.json.';
       }
     }
   } catch (e) {

@@ -48,7 +48,12 @@ function generateSkill(options) {
 
   let template = fs.readFileSync(templatePath, 'utf8');
   template = template.replace(/\{name\}/g, name);
-  template = template.replace(/\{description\}/g, description || `${name} skill`);
+  // br141: trigger-list scaffold rides the description block — an indented
+  // "Triggers:" line, matching the live skills/*/SKILL.md convention and the
+  // validator's trigger-list presence + 8-language coverage checks.
+  const descBody = description || `${name} skill`;
+  const triggerScaffold = `${descBody}\n  Triggers: ${name}, <english-keywords>, <한국어-키워드>, <日本語-キーワード>, <中文-关键词>, <español>, <français>, <deutsch>, <italiano>`;
+  template = template.replace(/\{description\}/g, triggerScaffold);
   template = template.replace(/\{argument-hint\}/g, argumentHint || '');
 
   // 3. Write SKILL.md

@@ -65,7 +65,7 @@ User: "Modify login.ts file"
 │  5. PostToolUse Hooks Execute                                    │
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ [[../../skills/bkit-rules/SKILL|bkit-rules]] → pdca-post-write.js│   │
+│  │ [[../../skills/bkit-rules/SKILL|bkit-rules]] → unified-write-post.js│   │
 │  │ • If design doc exists: "/pdca-analyze recommended" guidance│
 │  └─────────────────────────────────────────────────────────┘   │
 │                              │                                  │
@@ -131,7 +131,7 @@ PDCA documentation is essential.
 
 ### PostToolUse Result
 
-**bkit-rules (pdca-post-write.js)**:
+**bkit-rules (unified-write-post.js)**:
 ```
 Write completed: src/features/auth/login.ts
 

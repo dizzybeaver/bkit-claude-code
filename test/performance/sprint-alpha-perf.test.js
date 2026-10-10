@@ -14,7 +14,7 @@
  * design soft-target of 50ms reflects bkit-internal overhead which is
  * impossible to measure across `spawnSync` alone — recorded for context.
  *
- * @module test/perf/sprint-alpha-perf.test
+ * @module test/performance/sprint-alpha-perf.test
  */
 
 const test = require('node:test');

@@ -188,7 +188,7 @@ The following skills were consolidated:
 
 ### Core Scripts (3)
 - `scripts/pre-write.js` - Unified PreToolUse hook (PDCA + classification + convention)
-- `scripts/pdca-post-write.js` - PostToolUse guidance after Write
+- `scripts/unified-write-post.js` - PostToolUse guidance after Write
 - `scripts/select-template.js` - Template selection by level
 
 ### Phase Scripts (11)
@@ -205,7 +205,7 @@ The following skills were consolidated:
 - `scripts/phase9-deploy-pre.js` - Deployment environment validation
 
 ### QA Scripts (3)
-- `scripts/qa-pre-bash.js` - QA setup before Bash
+- `scripts/unified-bash-pre.js` - QA setup before Bash
 - `scripts/qa-monitor-post.js` - QA completion guidance
 - `scripts/qa-stop.js` - QA session cleanup
 
@@ -217,8 +217,8 @@ The following skills were consolidated:
 - `scripts/analysis-stop.js` - Analysis completion guidance
 
 ### Utility Scripts (4)
-- `scripts/pdca-pre-write.js` - PDCA pre-write checks
-- `scripts/archive-feature.js` - Feature archiving
+- `scripts/pre-write.js` - PDCA pre-write checks
+- `scripts/pdca-archive.js` - Feature archiving
 - `scripts/sync-folders.js` - Folder synchronization
 - `scripts/validate-plugin.js` - Plugin validation
 

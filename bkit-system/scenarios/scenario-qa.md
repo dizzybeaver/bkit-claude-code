@@ -54,7 +54,7 @@ User: "/zero-script-qa" or "Run QA"
 │  5. PreToolUse Hook on Bash Execution                            │
 │                                                                 │
 │  [[../../skills/zero-script-qa/SKILL|zero-script-qa]]                       │
-│  → qa-pre-bash.js                                               │
+│  → unified-bash-pre.js                                               │
 │                                                                 │
 │  • Check destructive commands (rm -rf, DROP, etc.)              │
 │  • If found → Block                                             │
@@ -175,7 +175,7 @@ Run /pdca-iterate for auto-fix?
 
 | Timing | Hook | Script | Action |
 |--------|------|--------|--------|
-| Before Bash execution | PreToolUse | qa-pre-bash.js | Block destructive commands |
+| Before Bash execution | PreToolUse | unified-bash-pre.js | Block destructive commands |
 | After report Write | PostToolUse | qa-monitor-post.js | Critical issue notification |
 | On QA session end | Stop | qa-stop.js | Next steps guidance |
 
@@ -183,7 +183,7 @@ Run /pdca-iterate for auto-fix?
 
 ## Destructive Command Block List
 
-Patterns blocked by `qa-pre-bash.js`:
+Patterns blocked by `unified-bash-pre.js`:
 
 ```bash
 - rm -rf
@@ -227,4 +227,4 @@ For team-based QA execution, CTO-Led Agent Teams can parallelize QA:
 - [[scenario-new-feature]] - New feature request scenario
 - [[../../skills/zero-script-qa/SKILL|zero-script-qa]] - Zero Script QA skill
 - [[../../agents/qa-monitor|qa-monitor]] - QA Monitor agent
-- [[../components/scripts/_scripts-overview]] - qa-pre-bash.js
+- [[../components/scripts/_scripts-overview]] - unified-bash-pre.js

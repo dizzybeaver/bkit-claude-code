@@ -358,7 +358,7 @@ const CATEGORIES = {
        * extension, and a green run that skips it is a green run that means less
        * than it looks.
        */
-      'perf/sprint-alpha-perf.test.js',
+      'performance/sprint-alpha-perf.test.js',
       'performance/hook-perf.test.js',
       'performance/core-function-perf.test.js',
       'performance/benchmark-perf.test.js',

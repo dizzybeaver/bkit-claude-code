@@ -16,7 +16,6 @@ allowed-tools:
   - Glob
   - Grep
   - WebSearch
-user-invocable: false
 next-skill: phase-8-review
 pdca-phase: do
 task-template: "[Phase-7] {feature}"

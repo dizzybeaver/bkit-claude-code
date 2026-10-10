@@ -81,7 +81,7 @@
 | 1.3.3 | .env file Write | Environment variable convention guidance | [ ] |
 | 1.3.4 | .md file Write | Empty output | [ ] |
 
-### 1.4 zero-script-qa (qa-pre-bash.js)
+### 1.4 zero-script-qa (unified-bash-pre.js)
 
 | # | Test Case | Expected Result | Pass |
 |---|-----------|-----------------|------|
@@ -102,7 +102,7 @@
 
 ## 2. PostToolUse Hooks Tests
 
-### 2.1 bkit-rules (pdca-post-write.js)
+### 2.1 bkit-rules (unified-write-post.js)
 
 | # | Test Case | Expected Result | Pass |
 |---|-----------|-----------------|------|

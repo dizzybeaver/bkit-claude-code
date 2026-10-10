@@ -102,6 +102,12 @@ fs.writeFileSync(transcriptPath, [
   '',
 ].join('\n'));
 
+// br043 guard: readHookText only reads transcripts under ~/.claude/projects or
+// CLAUDE_PROJECT_DIR/cwd — point the env at this test's tmpDir so the fixture
+// is permitted, and restore the caller's value after the block.
+const prevClaudeProjectDir = process.env.CLAUDE_PROJECT_DIR;
+process.env.CLAUDE_PROJECT_DIR = tmpDir;
+
 const resolved = io.readHookText({ ...ENVELOPE, transcript_path: transcriptPath });
 
 assert('SE-010', matchRatePattern.test(resolved) && resolved.match(matchRatePattern)[2] === '87',
@@ -114,6 +120,11 @@ assert('SE-012', actionPattern.test(resolved) &&
 assert('SE-013', !/Match Rate: 3%/.test(resolved),
   'The thinking block cannot supply a competing match rate');
 
+if (prevClaudeProjectDir === undefined) {
+  delete process.env.CLAUDE_PROJECT_DIR;
+} else {
+  process.env.CLAUDE_PROJECT_DIR = prevClaudeProjectDir;
+}
 fs.rmSync(tmpDir, { recursive: true, force: true });
 
 // --- G-2: unmeasured stays unmeasured through the iterator ---

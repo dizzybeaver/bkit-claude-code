@@ -316,7 +316,8 @@ function runDestructiveDetector(ctx) {
 function runBlastRadius(ctx) {
   try {
     const br = require('../lib/control/blast-radius');
-    const check = br.checkSingleFile(ctx.filePath, ctx.content?.length || 0);
+    // br108: B-001 threshold counts LINES, not characters
+    const check = br.checkSingleFile(ctx.filePath, String(ctx.content || '').split('\n').length);
     if (check.warning) return `Blast radius warning: ${check.warning}`;
   } catch (e) {
     debugLog('PreToolUse', 'blast radius failed', { error: e.message });
@@ -477,6 +478,11 @@ function main() {
    * See lib/domain/policy/permission-mode-policy.js §"WHAT IS AND IS NOT RELAXED".
    */
   const ctx = { input, filePath, content, permissionMode };
+  // br084: bypassPermissions derived from permission_mode per ENH-469 (CC sends no permissions object).
+  // Set unconditionally so the ENH-263 guard (lib/domain/guards/enh-263-claude-write.js reads
+  // ctx.bypassPermissions) and any other ctx consumer see the real derived flag, not a
+  // payload field that never exists.
+  ctx.bypassPermissions = (permissionMode === 'bypassPermissions');
   const contextParts = [];
 
   // Stage 0: Permission

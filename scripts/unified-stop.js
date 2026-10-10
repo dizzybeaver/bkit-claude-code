@@ -724,8 +724,11 @@ if (feature && transitionSuccess) {
           te.recordEvent(verdict === 'pass' ? 'gate_pass' : 'gate_fail', { feature, matchRate });
         }
       }
-      // v2.1.1 TC-01: Sync trust score to control-state.json
-      te.syncToControlState();
+      // v2.1.1 TC-01: Sync trust score to control-state.json.
+      // br100: use the documented public API reconcile() — it internally
+      // delegates to syncToControlState() and adds trustScoreEnabled gating
+      // plus a structured result. The bare sync helper is the internal path.
+      te.reconcile({ trigger: 'unified-stop' });
       debugLog('UnifiedStop', 'v2.1.1 trust synced to control-state', { feature, currentPhase, nextPhase });
     }
   } catch (_) { /* non-critical */ }

@@ -19,7 +19,7 @@ console.log('\n=== Memory Leak Prevention Tests ===\n');
 
 // --- Cache: bounded growth ---
 
-test('ML-01', 'cache set 1000 entries does not grow Map beyond 1000', () => {
+test('ML-01', 'cache set 1000 entries is bounded at MAX_ENTRIES (500, oldest evicted)', () => {
   // Fresh cache module
   const modPath = require.resolve('../../lib/core/cache');
   delete require.cache[modPath];
@@ -31,14 +31,20 @@ test('ML-01', 'cache set 1000 entries does not grow Map beyond 1000', () => {
     cache.set(`key-${i}`, `value-${i}`);
   }
 
-  // Verify all 1000 entries exist (Map has no automatic eviction)
+  // br058: the cache is bounded at MAX_ENTRIES = 500 with oldest-insertion
+  // eviction. Setting 1000 keys must evict key-0..key-499 and retain
+  // key-500..key-999 — exactly 500 valid entries, never unbounded growth.
   let validCount = 0;
   for (let i = 0; i < 1000; i++) {
     const v = cache.get(`key-${i}`, 60000); // long TTL
     if (v !== null) validCount++;
   }
 
-  assert.strictEqual(validCount, 1000, `Expected 1000 valid entries, got ${validCount}`);
+  assert.strictEqual(validCount, 500, `Expected 500 valid entries (designed cap), got ${validCount}`);
+  assert.strictEqual(cache.get('key-0', 60000), null, 'oldest entry (key-0) must be evicted');
+  assert.strictEqual(cache.get('key-499', 60000), null, 'key-499 must be evicted (boundary)');
+  assert.strictEqual(cache.get('key-500', 60000), 'value-500', 'key-500 must be retained (boundary)');
+  assert.strictEqual(cache.get('key-999', 60000), 'value-999', 'newest entry must be retained');
   cache.clear();
 });
 

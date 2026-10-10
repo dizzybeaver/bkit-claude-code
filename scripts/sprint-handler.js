@@ -255,7 +255,12 @@ async function handleSprintAction(action, args, deps) {
       case 'feature': result = await handleFeature(a, infra); break;
       case 'watch':   result = await handleWatch(a, infra); break;
       case 'help':    result = await handleHelp(); break;
-      case 'master-plan': result = await handleMasterPlan(a, infra, d); break;
+      // br082: thread the resolved root into master-plan — handleMasterPlan
+      // fell back to process.cwd() in generateMasterPlan.usecase, so Sprint 4+
+      // multi-repo worktrees resolved the wrong root. infra.projectRoot is the
+      // root this action's infra bundle is already bound to.
+      case 'master-plan': result = await handleMasterPlan(
+        Object.assign({}, a, { projectRoot: a.projectRoot || (infra && infra.projectRoot) }), infra, d); break;
       case 'measure': result = await handleMeasure(a, infra, d); break;
       case 'trust':   result = await handleTrust(a, infra, d); break;
       case 'dogfood': result = await handleDogfood(a, infra, d); break;   // F1-2 v2.1.19 S1

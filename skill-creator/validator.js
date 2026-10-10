@@ -16,7 +16,8 @@ const REQUIRED_FRONTMATTER = [
   'name',
   'description',
   'classification',
-  'deprecation-risk'
+  'deprecation-risk',
+  'user-invocable'
 ];
 
 const VALID_CLASSIFICATIONS = ['workflow', 'capability', 'hybrid'];
@@ -46,11 +47,46 @@ function validateSkill(skillName) {
 
   const frontmatter = fmMatch[1];
 
-  // Check required fields
+  // br141: line-based frontmatter key parsing (replaces substring presence check)
+  const keyCounts = {};
+  const keyValues = {};
+  for (const line of frontmatter.split(/\r?\n/)) {
+    const m = line.match(/^([a-z0-9-]+):/);
+    if (m) {
+      keyCounts[m[1]] = (keyCounts[m[1]] || 0) + 1;
+      if (keyValues[m[1]] === undefined) keyValues[m[1]] = line.slice(m[1].length + 1).trim();
+    }
+  }
+
+  // br141: duplicate top-level keys are parser-dependent (br140 defect class)
+  for (const key of Object.keys(keyCounts)) {
+    if (keyCounts[key] > 1) {
+      errors.push(`Duplicate frontmatter key: ${key}`);
+    }
+  }
+
+  // Required presence
   for (const field of REQUIRED_FRONTMATTER) {
-    if (!frontmatter.includes(`${field}:`)) {
+    if (!keyCounts[field]) {
       errors.push(`Missing required field: ${field}`);
     }
+  }
+
+  // br141: user-invocable must be a strict boolean literal
+  if (keyValues['user-invocable'] !== undefined && keyValues['user-invocable'] !== '') {
+    if (keyValues['user-invocable'] !== 'true' && keyValues['user-invocable'] !== 'false') {
+      errors.push('Invalid user-invocable value (must be true or false)');
+    }
+  }
+
+  // br141: trigger-list presence + non-English coverage (8-language contract)
+  // Live convention: triggers are declared as an indented "Triggers:" line inside
+  // the description block, not as a frontmatter key.
+  const hasTriggers = /(^|\n)\s+Triggers?:/i.test(frontmatter);
+  if (!hasTriggers) {
+    errors.push('Missing trigger list (expected an indented "Triggers:" line in the description block)');
+  } else if (!/[\uAC00-\uD7AF\u3040-\u30FF\u4E00-\u9FFF]/.test(frontmatter)) {
+    warnings.push('Trigger list lacks non-English markers (ko/ja/zh) - 8-language contract coverage');
   }
 
   // Validate classification value

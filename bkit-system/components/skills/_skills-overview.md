@@ -302,7 +302,7 @@ hooks:
     - matcher: "Write"
       hooks:
         - type: command
-          command: "node ${CLAUDE_PLUGIN_ROOT}/scripts/pdca-post-write.js"
+          command: "node ${CLAUDE_PLUGIN_ROOT}/scripts/unified-write-post.js"
 ```
 
 ### Stop

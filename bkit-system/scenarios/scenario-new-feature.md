@@ -69,7 +69,7 @@ User: "Create a login feature"
 │  5. Hooks Fire on Write/Edit (See [[scenario-write-code]])       │
 │                                                                 │
 │  PreToolUse: pre-write.js (unified hook v1.2.0)                │
-│  PostToolUse: pdca-post-write.js, phase6-ui-post.js            │
+│  PostToolUse: unified-write-post.js, phase6-ui-post.js            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼

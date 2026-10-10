@@ -146,16 +146,7 @@ assert('SM-025', typeof GUARDS.guardCanIterate === 'function', 'guardCanIterate 
   assert('SM-029', notMaxReached === false, 'guardMaxIterReached false when iterations < max');
 }
 
-{
-  const stale = GUARDS.guardStaleFeature({
-    timestamps: {
-      lastUpdated: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  });
-  assert('SM-030', stale === true, 'guardStaleFeature true for 8-day-old feature');
-}
-
-// --- SM-026~030: canTransition() valid/invalid paths ---
+// --- SM-026~029: canTransition() valid/invalid paths (SM-030 removed: guardStaleFeature deleted per br061) ---
 
 assert('SM-031', canTransition('idle', 'START') === true, 'canTransition idle+START = true');
 assert('SM-032', canTransition('idle', 'SKIP_PM') === true, 'canTransition idle+SKIP_PM = true');
