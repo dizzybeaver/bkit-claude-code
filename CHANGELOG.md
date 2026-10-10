@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — br040-041 follow-up wave (2026-10-10): stale-evidence gate, pause/resume verbs, junk-row cleanup
+
+The three items deferred from the br040–br041 wave, delivered in cycle
+`br040-041-followups`:
+
+- **Gate (d) stale-evidence.** `shouldSkipAutoTransition` (both
+  `scripts/unified-stop.js` and `scripts/pdca-skill-stop.js`) now also
+  withholds the AUTO-TRANSITION when the feature's current phase has an
+  empty doc set — no artifact was produced, so the phase cannot have
+  completed. Unresolvable feature/phase never skips (no over-blocking).
+  Fix of record: gate (d)'s `getPdcaStatusPath()` require was missing in
+  both scripts, a ReferenceError silently swallowed by `catch(_)`.
+- **`/pdca pause` | `/pdca resume` verbs.** `pdca-skill-stop.js` writes/
+  removes `.bkit/state/pdca-pause` (the gate-(a) flag) sanctionedly; the
+  verb branch sits above the AUTO-TRANSITION gate so a fresh pause is
+  never withheld by the gate it silences. Skip exits now emit the
+  v2122-contract allow JSON (`outputStopAllow()`).
+- **`cleanupOrphanActiveFeatures()`** (lib/pdca/status-cleanup.js,
+  re-exported via lib/pdca/status.js): purges activeFeatures rows failing
+  `isValidFeatureName` from `activeFeatures` + `features{}` via locked
+  RMW, promoting primary via `pickPrimarySuccessor`. Used in-session to
+  clean a re-polluted real registry (full-sentence rows — the exact
+  br041 shape, from the stale cached hook).
+
+Testing: new suite `test-scripts/unit/fix-br040-041-followups.test.js`
+10/10 under jest; battery `node test/run-all.js` → 5358 TC, 5353 PASS,
+0 FAIL, 5 SKIP — ALL TESTS PASSED (after fixing the v2122 skip-exit
+schema violation and the stale status-split export counts 28→29, 5→6).
+Cycle docs archived to `docs/archive/2026-10/br040-041-followups/`.
+
 ### Fixed — br040–br041 wave (2026-10-09): evidence-gated AUTO-TRANSITION, feature-name intake validation
 
 Two active reports closed in one cycle (br040-041-stop-intake), both in the

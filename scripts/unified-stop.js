@@ -194,6 +194,32 @@ function shouldSkipAutoTransition(hookContext) {
     return { skip: true, gate: 'specialist-agent' };
   }
 
+  // (d) br040-041-followups: stale-evidence gate (parity with pdca-skill-stop).
+  // The CURRENT phase's doc artifact must exist before an auto-transition is
+  // earned. Unresolvable feature/phase does NOT skip.
+  try {
+    const { getPdcaStatusFull, getPdcaStatusPath } = require('../lib/pdca/status');
+    const status = getPdcaStatusFull();
+    const feature = status?.primaryFeature || (status?.activeFeatures || [])[0] || null;
+    const phase = feature ? status?.features?.[feature]?.phase : null;
+    const PHASE_DOC_DIRS = {
+      plan: 'docs/01-plan/features',
+      design: 'docs/02-design/features',
+      check: 'docs/03-analysis',
+      report: 'docs/04-report/features',
+      qa: 'docs/05-qa',
+    };
+    if (feature && phase && PHASE_DOC_DIRS[phase]) {
+      // Project root = two levels above .bkit/state/ (status file's parent dir).
+      const projectRoot = path.resolve(path.dirname(getPdcaStatusPath()), '..', '..');
+      const dir = path.join(projectRoot, PHASE_DOC_DIRS[phase]);
+      const names = require('fs').existsSync(dir) ? require('fs').readdirSync(dir) : [];
+      if (!names.some((n) => n.startsWith(`${feature}.`))) {
+        return { skip: true, gate: 'stale-evidence' };
+      }
+    }
+  } catch (_) { /* status unresolvable — no skip */ }
+
   return { skip: false, gate: null };
 }
 

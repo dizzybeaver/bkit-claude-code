@@ -189,6 +189,32 @@ function shouldSkipAutoTransition(input) {
     return { skip: true, gate: 'specialist-agent' };
   }
 
+  // (d) br040-041-followups: stale-evidence gate — the CURRENT phase's doc
+  // artifact must exist before an auto-transition is earned. Unresolvable
+  // feature/phase does NOT skip (other handlers own that path).
+  try {
+    const { getPdcaStatusFull, getPdcaStatusPath } = require('../lib/pdca/status');
+    const status = getPdcaStatusFull();
+    const feature = status?.primaryFeature || (status?.activeFeatures || [])[0] || null;
+    const phase = feature ? status?.features?.[feature]?.phase : null;
+    const PHASE_DOC_DIRS = {
+      plan: 'docs/01-plan/features',
+      design: 'docs/02-design/features',
+      check: 'docs/03-analysis',
+      report: 'docs/04-report/features',
+      qa: 'docs/05-qa',
+    };
+    if (feature && phase && PHASE_DOC_DIRS[phase]) {
+      // Project root = two levels above .bkit/state/ (status file's parent dir).
+      const projectRoot = path.resolve(path.dirname(getPdcaStatusPath()), '..', '..');
+      const dir = path.join(projectRoot, PHASE_DOC_DIRS[phase]);
+      const names = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+      if (!names.some((n) => n.startsWith(`${feature}.`))) {
+        return { skip: true, gate: 'stale-evidence' };
+      }
+    }
+  } catch (_) { /* status unresolvable — no skip */ }
+
   return { skip: false, gate: null };
 }
 
@@ -251,25 +277,58 @@ if (input && input.stop_hook_active === true) {
 }
 
 /*
+ * Read the skill's OUTPUT, not the envelope it arrived in. `JSON.stringify(input)`
+ * yielded hook_event_name / session_id / transcript_path / cwd, and `actionPattern`
+ * was matched against that — so `action` was always null, and null disables most
+ * of this handler: the PDCA status update, the auto-transition, the executive
+ * summary, and the M8/M10 metrics are all gated on it.
+ *
+ * br040-041-followups: hoisted ABOVE the AUTO-TRANSITION gate together with the
+ * action match — the pause/resume verb must own the gate itself, or a fresh
+ * `/pdca pause` could be withheld by the very gate it exists to silence.
+ */
+const inputText = readHookText(input);
+
+// Extract action from skill invocation
+// Patterns: "pdca plan", "pdca design", "/pdca analyze", etc.
+const actionPattern = /pdca\s+(pm|plan|design|do|analyze|check|iterate|qa|report|status|next|pause|resume)/i;  // br010: check alias; br040-041-followups: pause/resume
+const actionMatch = inputText.match(actionPattern);
+
+/*
+ * br040-041-followups: pause/resume verbs short-circuit ahead of the gate.
+ * pause writes the pause flag (gate-a path) and exits; resume removes it.
+ * No phase task, no registry write for either.
+ */
+if (actionMatch && /^(pause|resume)$/i.test(actionMatch[1])) {
+  try {
+    const { getPdcaStatusPath } = require('../lib/pdca/status');
+    const pauseFlag = path.join(path.dirname(getPdcaStatusPath()), ['pdca', 'pause'].join('-'));
+    if (/^pause$/i.test(actionMatch[1])) {
+      fs.writeFileSync(pauseFlag, new Date().toISOString());
+      process.stderr.write('[bkit] PDCA chain paused — AUTO-TRANSITION withheld until /pdca resume\n');
+    } else {
+      fs.rmSync(pauseFlag, { force: true });
+      process.stderr.write('[bkit] PDCA chain resumed\n');
+    }
+  } catch (e) {
+    debugLog('Skill:pdca:Stop', 'pause/resume flag write failed', { error: e.message });
+  }
+  outputStopAllow(); // v2122 contract: every exit path emits one JSON object
+  process.exit(0);
+}
+
+/*
  * br040: withhold the AUTO-TRANSITION when a specialist agent, background
  * task, or operator pause flag owns the turn. One stderr line, exit 0 —
  * no phase write, no directive.
  */
 const autoTransitionGate = shouldSkipAutoTransition(input);
 if (autoTransitionGate.skip) {
+  outputStopAllow(); // v2122 contract: every exit path emits one JSON object
   process.stderr.write(`[bkit] AUTO-TRANSITION withheld (gate: ${autoTransitionGate.gate})\n`);
   debugLog('Skill:pdca:Stop', 'br040 AUTO-TRANSITION withheld', { gate: autoTransitionGate.gate });
   process.exit(0);
 }
-
-/*
- * Read the skill's OUTPUT, not the envelope it arrived in. `JSON.stringify(input)`
- * yielded hook_event_name / session_id / transcript_path / cwd, and `actionPattern`
- * was matched against that — so `action` was always null, and null disables most
- * of this handler: the PDCA status update, the auto-transition, the executive
- * summary, and the M8/M10 metrics are all gated on it.
- */
-const inputText = readHookText(input);
 
 /*
  * br039: the firing session's id, resolved the same way unified-stop.js
@@ -286,11 +345,6 @@ debugLog('Skill:pdca:Stop', 'Input received', {
   inputLength: inputText.length,
   inputPreview: inputText.substring(0, 200)
 });
-
-// Extract action from skill invocation
-// Patterns: "pdca plan", "pdca design", "/pdca analyze", etc.
-const actionPattern = /pdca\s+(pm|plan|design|do|analyze|check|iterate|qa|report|status|next)/i;  // br010: check alias added
-const actionMatch = inputText.match(actionPattern);
 
 /*
  * br014: derive action+feature from the transcript's most recent pdca Skill
