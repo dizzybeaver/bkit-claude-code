@@ -1,0 +1,50 @@
+# bkit v2.0.5 Comprehensive Test Report
+
+> Generated: 2026-10-14T23:14:01.151Z
+> Total: 5365 TC, 5359 PASS, 1 FAIL, 5 SKIP
+> Pass Rate: 99.9%
+
+---
+
+## Summary
+
+| Category | Total | Passed | Failed | Skipped | Rate |
+|----------|:-----:|:------:|:------:|:-------:|:----:|
+| Unit Tests | 1985 | 1984 | 1 | 0 | 99.9% FAIL |
+| Integration Tests | 611 | 611 | 0 | 0 | 100.0% PASS |
+| Security Tests | 267 | 267 | 0 | 0 | 100.0% PASS |
+| Regression Tests | 877 | 877 | 0 | 0 | 100.0% PASS |
+| Performance Tests | 161 | 157 | 0 | 4 | 97.5% PASS |
+| Philosophy Tests | 140 | 140 | 0 | 0 | 100.0% PASS |
+| UX Tests | 185 | 185 | 0 | 0 | 100.0% PASS |
+| E2E Tests (Node) | 152 | 152 | 0 | 0 | 100.0% PASS |
+| Architecture Tests | 100 | 100 | 0 | 0 | 100.0% PASS |
+| Controllable AI Tests | 80 | 80 | 0 | 0 | 100.0% PASS |
+| behavioral | 45 | 45 | 0 | 0 | 100.0% PASS |
+| contract | 762 | 761 | 0 | 1 | 99.9% PASS |
+| **Total** | **5365** | **5359** | **1** | **5** | **99.9%** |
+
+## Version Comparison: v1.6.2 → v2.0.0
+
+| Metric | v1.6.2 | v2.0.0 | Delta |
+|--------|:------:|:------:|:-----:|
+| Categories | 8 | 12 | +4 |
+| Total TC | 1151 | 5365 | +4214 |
+| Unit Tests | 450 | 1985 | +1535 |
+| Integration Tests | 130 | 611 | +481 |
+| Security Tests | 80 | 267 | +187 |
+| Regression Tests | 200 | 877 | +677 |
+| Performance Tests | 76 | 161 | +85 |
+| Philosophy Tests | 60 | 140 | +80 |
+| UX Tests | 60 | 185 | +125 |
+| E2E Tests (Node) | 20 | 152 | +132 |
+| Architecture Tests | N/A | 100 | NEW |
+| Controllable AI Tests | N/A | 80 | NEW |
+| behavioral | N/A | 45 | NEW |
+| contract | N/A | 762 | NEW |
+
+## Failures
+
+## Verdict
+
+**1 TESTS FAILED** - Issues must be resolved before release.
