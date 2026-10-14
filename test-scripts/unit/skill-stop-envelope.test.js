@@ -293,6 +293,9 @@ describe('end-to-end hook spawn (isolated fixture project)', () => {
       features: { 'fix-y': { phase: 'design' } },
     });
     writeDoc(proj, 'docs/01-plan/features/fix-y.plan.en.md');
+    // stale-evidence gate (br040-041 contract) requires the CURRENT phase's
+    // doc artifact before an auto-transition is earned
+    writeDoc(proj, 'docs/02-design/features/fix-y.design.en.md');
     const tp = writeTranscript(proj, [
       assistantText('Proceeding to run /pdca plan fix-y for the next cycle.'),
     ]);

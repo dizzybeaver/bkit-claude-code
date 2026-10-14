@@ -212,8 +212,6 @@ function shouldSkipAutoTransition(input) {
   try {
     const { getPdcaStatusFull, getPdcaStatusPath } = require('../lib/pdca/status');
     const status = getPdcaStatusFull();
-    const feature = status?.primaryFeature || (status?.activeFeatures || [])[0] || null;
-    const phase = feature ? status?.features?.[feature]?.phase : null;
     const PHASE_DOC_DIRS = {
       plan: 'docs/01-plan/features',
       design: 'docs/02-design/features',
@@ -221,12 +219,23 @@ function shouldSkipAutoTransition(input) {
       report: 'docs/04-report/features',
       qa: 'docs/05-qa',
     };
-    if (feature && phase && PHASE_DOC_DIRS[phase]) {
+    // br047: the candidate set is EVERY registry feature sitting in a
+    // transitionable phase — not primaryFeature alone. The old single-feature
+    // resolution checked the WRONG feature's docs whenever the fired cycle
+    // was envelope-bound to a non-primary feature (br006/br015b binding),
+    // withholding a legitimate advance that had full evidence on disk.
+    const candidates = Object.entries(status?.features || {})
+      .filter(([, e]) => e && PHASE_DOC_DIRS[e.phase])
+      .map(([name, e]) => ({ name, dir: PHASE_DOC_DIRS[e.phase] }));
+    if (candidates.length > 0) {
       // Project root = two levels above .bkit/state/ (status file's parent dir).
       const projectRoot = path.resolve(path.dirname(getPdcaStatusPath()), '..', '..');
-      const dir = path.join(projectRoot, PHASE_DOC_DIRS[phase]);
-      const names = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-      if (!names.some((n) => n.startsWith(`${feature}.`))) {
+      const hasEvidence = candidates.some(({ name, dir: sub }) => {
+        const d = path.join(projectRoot, sub);
+        const names = fs.existsSync(d) ? fs.readdirSync(d) : [];
+        return names.some((n) => n.startsWith(`${name}.`));
+      });
+      if (!hasEvidence) {
         return { skip: true, gate: 'stale-evidence' };
       }
     }
@@ -290,6 +299,7 @@ try {
  */
 if (input && input.stop_hook_active === true) {
   debugLog('Skill:pdca:Stop', 'stop_hook_active=true — allowing turn end');
+  outputStopAllow(); // v2122 contract: every exit path emits one JSON object
   process.exit(0);
 }
 
@@ -417,6 +427,7 @@ let feature = resolveStopFeature({
  * "Completion report has been generated" blocks on every stop after archive.
  */
 if (feature === null) {
+  outputStopAllow(); // v2122 contract: every exit path emits one JSON object
   process.exit(0);
 }
 
@@ -471,6 +482,7 @@ if (
     feature,
     storedPhase: boundEntry.phase,
   });
+  outputStopAllow(); // v2122 contract: every exit path emits one JSON object
   process.exit(0);
 }
 

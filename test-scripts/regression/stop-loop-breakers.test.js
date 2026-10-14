@@ -72,14 +72,16 @@ describe('br022b: post-completion Stop must not re-block', () => {
     seed(tmp, { deadFeature: 'done-feature', phantomPrimary: 'ZfeatA' });
     const r = runHandler(tmp, false);
     expect(r.status).toBe(0);
-    expect(r.out).toBe('');
+    // v2122 contract: allow path emits one JSON object ({})
+    expect(r.out.trim()).toBe('{}');
   });
 
   test('T2 stop_hook_active=true -> always silent (harness loop breaker)', () => {
     seed(tmp, { deadFeature: 'done-feature', phantomPrimary: 'ZfeatA' });
     const r = runHandler(tmp, true);
     expect(r.status).toBe(0);
-    expect(r.out).toBe('');
+    // v2122 contract: allow path emits one JSON object ({})
+    expect(r.out.trim()).toBe('{}');
   });
 
   test('T3 control: live feature report envelope still emits', () => {

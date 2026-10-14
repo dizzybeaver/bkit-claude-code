@@ -200,8 +200,6 @@ function shouldSkipAutoTransition(hookContext) {
   try {
     const { getPdcaStatusFull, getPdcaStatusPath } = require('../lib/pdca/status');
     const status = getPdcaStatusFull();
-    const feature = status?.primaryFeature || (status?.activeFeatures || [])[0] || null;
-    const phase = feature ? status?.features?.[feature]?.phase : null;
     const PHASE_DOC_DIRS = {
       plan: 'docs/01-plan/features',
       design: 'docs/02-design/features',
@@ -209,12 +207,23 @@ function shouldSkipAutoTransition(hookContext) {
       report: 'docs/04-report/features',
       qa: 'docs/05-qa',
     };
-    if (feature && phase && PHASE_DOC_DIRS[phase]) {
+    // br047: the candidate set is EVERY registry feature sitting in a
+    // transitionable phase — not primaryFeature alone. The old single-feature
+    // resolution checked the WRONG feature's docs whenever the fired cycle
+    // was envelope-bound to a non-primary feature (br006/br015b binding),
+    // withholding a legitimate advance that had full evidence on disk.
+    const candidates = Object.entries(status?.features || {})
+      .filter(([, e]) => e && PHASE_DOC_DIRS[e.phase])
+      .map(([name, e]) => ({ name, dir: PHASE_DOC_DIRS[e.phase] }));
+    if (candidates.length > 0) {
       // Project root = two levels above .bkit/state/ (status file's parent dir).
       const projectRoot = path.resolve(path.dirname(getPdcaStatusPath()), '..', '..');
-      const dir = path.join(projectRoot, PHASE_DOC_DIRS[phase]);
-      const names = require('fs').existsSync(dir) ? require('fs').readdirSync(dir) : [];
-      if (!names.some((n) => n.startsWith(`${feature}.`))) {
+      const hasEvidence = candidates.some(({ name, dir: sub }) => {
+        const d = path.join(projectRoot, sub);
+        const names = require('fs').existsSync(d) ? require('fs').readdirSync(d) : [];
+        return names.some((n) => n.startsWith(`${name}.`));
+      });
+      if (!hasEvidence) {
         return { skip: true, gate: 'stale-evidence' };
       }
     }

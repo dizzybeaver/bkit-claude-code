@@ -5,8 +5,8 @@
  * phase 'archived', so the binder still resolves it and the emitter re-fires
  * the acknowledgement on every later stop.
  *
- *   T1  archived feature key present + stale report envelope -> silent exit 0
- *   T2  completed (not yet archived) feature + same envelope -> silent exit 0
+ *   T1  archived feature key present + stale report envelope -> allow-envelope exit 0
+ *   T2  completed (not yet archived) feature + same envelope -> allow-envelope exit 0
  *   T3  control: a LIVE feature in phase 'report' still emits — the guard
  *       silences terminal features only, the handler is not neutered.
  *
@@ -92,23 +92,25 @@ function runHandler(tmp) {
   }
 }
 
-describe('br019: terminal-feature Stop must stay silent', () => {
+describe('br019: terminal-feature Stop must not re-block (v2122 allow envelope)', () => {
   let tmp;
   beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-br019-')); });
   afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
-  test('T1 archived feature key present + stale report envelope -> silent exit 0', () => {
+  test('T1 archived feature key present + stale report envelope -> allow-envelope exit 0', () => {
     seedTerminal(tmp, 'archived');
     const r = runHandler(tmp);
     expect(r.status).toBe(0);
-    expect(r.out).toBe('');
+    // v2122 contract: every exit path emits one JSON allow object ({}), not silence
+    expect(r.out.trim()).toBe('{}');
   });
 
-  test('T2 completed (not yet archived) feature -> silent exit 0', () => {
+  test('T2 completed (not yet archived) feature -> allow-envelope exit 0', () => {
     seedTerminal(tmp, 'completed');
     const r = runHandler(tmp);
     expect(r.status).toBe(0);
-    expect(r.out).toBe('');
+    // v2122 contract: every exit path emits one JSON allow object ({}), not silence
+    expect(r.out.trim()).toBe('{}');
   });
 
   test('T3 control: live feature in report phase still emits', () => {

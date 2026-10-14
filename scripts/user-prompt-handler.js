@@ -89,6 +89,31 @@ try {
 
 const contextParts = [];
 
+/*
+ * br048: advisory activity gate. The intent/agent/skill/ambiguity/team/
+ * template-structure advisories below fired on EVERY prompt, even with no
+ * active bkit workflow — pure context spam (observed 2026-10-14: a /loop
+ * session accumulated 5+ advisory blocks, including template dumps, on
+ * mid-loop ticks). They are now gated on a GENUINELY active feature: a
+ * non-terminal registry entry updated within the last 6 hours. Archived/
+ * completed entries and stale junk rows (e.g. a primaryFeature last touched
+ * days ago) no longer count as active work, so idle sessions get silence.
+ */
+const ADVISORY_ACTIVITY_WINDOW_MS = 6 * 60 * 60 * 1000;
+let advisoryGateOpen = false;
+try {
+  const st = getPdcaStatusFull();
+  const now = Date.now();
+  advisoryGateOpen = Object.values(st?.features || {}).some((e) => {
+    if (!e || e.phase === 'archived' || e.phase === 'completed') return false;
+    if (e.archivedAt !== undefined || e.archivedTo !== undefined) return false;
+    const ts = (e.timestamps && (e.timestamps.lastUpdated || e.timestamps.updatedAt || e.timestamps.started))
+      || e.updatedAt || e.startedAt;
+    return typeof ts === 'string' && (now - Date.parse(ts)) < ADVISORY_ACTIVITY_WINDOW_MS;
+  });
+} catch (_) { /* status unresolvable — default closed (silent) */ }
+debugLog('UserPrompt', 'advisory gate', { open: advisoryGateOpen });
+
 // ENH-226 Phase A: contextInjection opt-out — additional context 섹션만 스킵, sessionTitle은 유지.
 if (!contextInjectionEnabled) {
   // sessionTitle만 발행 (있을 때)
@@ -110,7 +135,7 @@ if (!contextInjectionEnabled) {
 // 1. New Feature Intent Detection
 try {
   const featureIntent = detectNewFeatureIntent(userPrompt);
-  if (featureIntent && featureIntent.isNewFeature && featureIntent.confidence > 0.8) {
+  if (advisoryGateOpen && featureIntent && featureIntent.isNewFeature && featureIntent.confidence > 0.8) {
     contextParts.push(`New feature detected: "${featureIntent.featureName}". Consider /pdca-plan first.`);
     debugLog('UserPrompt', 'New feature intent detected', {
       featureName: featureIntent.featureName,
@@ -124,7 +149,7 @@ try {
 // 2. Implicit Agent Trigger
 try {
   const agentTrigger = matchImplicitAgentTrigger(userPrompt);
-  if (agentTrigger && agentTrigger.confidence >= 0.8) {
+  if (advisoryGateOpen && agentTrigger && agentTrigger.confidence >= 0.8) {
     contextParts.push(`Suggested agent: ${agentTrigger.agent}`);
     debugLog('UserPrompt', 'Agent trigger matched', {
       agent: agentTrigger.agent,
@@ -138,7 +163,7 @@ try {
 // 3. Implicit Skill Trigger
 try {
   const skillTrigger = matchImplicitSkillTrigger(userPrompt);
-  if (skillTrigger && skillTrigger.confidence > 0.75) {
+  if (advisoryGateOpen && skillTrigger && skillTrigger.confidence > 0.75) {
     contextParts.push(`Relevant skill: ${skillTrigger.skill}`);
     debugLog('UserPrompt', 'Skill trigger matched', {
       skill: skillTrigger.skill,
@@ -153,11 +178,11 @@ try {
 try {
   const { CC_COMMAND_PATTERNS, matchMultiLangPattern } = require('../lib/intent/language');
   if (CC_COMMAND_PATTERNS) {
-    if (matchMultiLangPattern(userPrompt, CC_COMMAND_PATTERNS['simplify'])) {
+    if (advisoryGateOpen && matchMultiLangPattern(userPrompt, CC_COMMAND_PATTERNS['simplify'])) {
       contextParts.push('CC /simplify command detected. Suggest after Check ≥90% or code review.');
       debugLog('UserPrompt', 'CC simplify command detected');
     }
-    if (matchMultiLangPattern(userPrompt, CC_COMMAND_PATTERNS['batch'])) {
+    if (advisoryGateOpen && matchMultiLangPattern(userPrompt, CC_COMMAND_PATTERNS['batch'])) {
       contextParts.push('CC /batch command detected. Useful for multi-feature PDCA (Enterprise).');
       debugLog('UserPrompt', 'CC batch command detected');
     }
@@ -169,7 +194,7 @@ try {
 // 3.5: bkend recommendation for backend/DB requests (G-04, G-05)
 try {
   const skillTriggerForBkend = matchImplicitSkillTrigger(userPrompt);
-  if (skillTriggerForBkend && skillTriggerForBkend.skill === 'dynamic') {
+  if (advisoryGateOpen && skillTriggerForBkend && skillTriggerForBkend.skill === 'dynamic') {
     const hasBkendMcp = checkBkendMcpConfig();
     if (!hasBkendMcp) {
       contextParts.push(
@@ -186,7 +211,7 @@ try {
 let ambiguityUserPrompt = null;
 try {
   const ambiguity = calculateAmbiguityScore(userPrompt, {});
-  if (ambiguity && ambiguity.shouldClarify && !ambiguity.bypassed) {
+  if (advisoryGateOpen && ambiguity && ambiguity.shouldClarify && !ambiguity.bypassed) {
     contextParts.push(`Request may be ambiguous (score: ${ambiguity.score}). Consider clarifying.`);
     debugLog('UserPrompt', 'Ambiguity detected', {
       score: ambiguity.score,
@@ -226,7 +251,7 @@ try {
     const teamSuggestion = teamModule.suggestTeamMode(userPrompt, {
       messageLength: userPrompt.length,
     });
-    if (teamSuggestion && teamSuggestion.suggest) {
+    if (advisoryGateOpen && teamSuggestion && teamSuggestion.suggest) {
       contextParts.push(
         `CTO Agent Team recommended for ${teamSuggestion.level} level. ` +
         `Use \`/pdca team {feature}\` for parallel PDCA with Agent Teams orchestration.`
@@ -245,7 +270,7 @@ try {
 if (importResolver) {
   try {
     const skillTrigger = matchImplicitSkillTrigger(userPrompt);
-    if (skillTrigger && skillTrigger.skill) {
+    if (advisoryGateOpen && skillTrigger && skillTrigger.skill) {
       // #125: matchImplicitSkillTrigger returns the namespaced `bkit:<skill>`
       // form (intent/trigger.js), but the folder is `skills/<skill>/` — resolve
       // the bare name so implicit-trigger template injection stops silently

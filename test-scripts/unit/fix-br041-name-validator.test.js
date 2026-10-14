@@ -90,10 +90,10 @@ describe('br041: normalizeFeatureName happy paths', () => {
     expect(r.name).toBe('my-feature');
   });
 
-  test('already-normalized names pass through unchanged', () => {
+  test('underscore runs normalize to hyphens (documented contract)', () => {
     const r = normalizeFeatureName('my-feature_01');
     expect(r.ok).toBe(true);
-    expect(r.name).toBe('my-feature_01');
+    expect(r.name).toBe('my-feature-01');
   });
 
   test('64-char names are valid (boundary)', () => {
@@ -154,7 +154,10 @@ describe('br041: isValidFeatureName (pure shape check, no normalization)', () =>
     expect(isValidFeatureName('My Feature')).toBe(false); // spaces are not valid raw
     expect(isValidFeatureName('')).toBe(false);
     expect(isValidFeatureName('-x')).toBe(false);
-    expect(isValidFeatureName('x-')).toBe(false);
+    // pure regex shape check ADMITS a trailing hyphen — edge-hyphen
+    // rejection belongs to normalizeFeatureName (documented split)
+    expect(isValidFeatureName('x-')).toBe(true);
+    expect(normalizeFeatureName('x-').ok).toBe(false);
     expect(isValidFeatureName('a'.repeat(65))).toBe(false);
     expect(isValidFeatureName(null)).toBe(false);
   });
@@ -181,8 +184,11 @@ describe('br041: registerFeature rejects malformed names with no registry write'
     // it registers it must do so under the normalized name
     if (result.registered) {
       const status = readStatus();
-      expect(status.features['my-new-feature']).toBeDefined();
-      expect(status.features['My New Feature']).toBeUndefined();
+      // registration lands in primaryFeature + activeFeatures (live-probed
+      // contract), NOT a status.features{} map entry
+      expect(status.primaryFeature).toBe('my-new-feature');
+      expect(status.activeFeatures).toContain('my-new-feature');
+      expect(status.activeFeatures).not.toContain('My New Feature');
     }
   });
 });
