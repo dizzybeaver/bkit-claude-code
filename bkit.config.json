@@ -312,5 +312,14 @@
         "act": "watchdog"
       }
     }
+  },
+  "hooks": {
+    "advisory": {
+      "_comment": "br144: advisory-only hook emitters are gated here. absent/false = silent (default); strict boolean true = inject (old behavior). Functional emitters (ENH-310/G-019 guards, PDCA phase transitions, session health) are NOT gated.",
+      "classifierEnvelope": false,
+      "featureDetector": false,
+      "ackMessages": false,
+      "forkModeAdvisory": false
+    }
   }
 }

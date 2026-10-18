@@ -297,6 +297,10 @@ function buildModelFloorAdvisoryText(version) {
  */
 function buildCCVersionAdvisoryContext() {
   try {
+    // br144: gated by hooks.advisory.forkModeAdvisory (default false = silent).
+    // Strict boolean true restores the Preflight/model-floor advisory.
+    const { getConfig } = require('../../lib/core/config');
+    if (getConfig('hooks.advisory.forkModeAdvisory') !== true) return '';
     const result = detectCCVersion();
     if (result.isOldVersion && result.advisory) {
       return result.advisory + '\n';

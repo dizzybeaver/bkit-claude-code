@@ -28,6 +28,15 @@ process.on('exit', () => {
   try { fs.rmSync(ISOLATED_PROJECT_DIR, { recursive: true, force: true }); } catch (_) { /* ignore */ }
 });
 
+// br144: unified-stop's default-path ack ("Stop event processed." + tips) is
+// gated behind hooks.advisory.ackMessages (default false = silent). STOP-01..
+// 07 assert the emitter's OUTPUT, so the fixture enables the flag; default
+// silence is separately locked by test/contract/br144-advisory-gating.test.js.
+fs.writeFileSync(
+  path.join(ISOLATED_PROJECT_DIR, 'bkit.config.json'),
+  JSON.stringify({ hooks: { advisory: { ackMessages: true } } }, null, 2),
+);
+
 function runHook(scriptPath, payload = {}, options = {}) {
   return runHookRaw(scriptPath, payload, {
     ...options,

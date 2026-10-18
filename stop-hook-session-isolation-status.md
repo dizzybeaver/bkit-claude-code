@@ -39,3 +39,14 @@ Registry phase: do. Bug-fix path per work.md §45.9 (no gap/iterate/qa).
 | 2 | br138-build2 (dispatched ~12:08, deadline 12:18) | test/contract/stale-evidence-passthrough.test.js + self-checks | — |
 
 Remaining for dispatch 2: ONLY the new contract test file (design §7 TS-1..TS-7) + self-check runs. Code side complete; do NOT re-edit scripts.
+
+---
+
+## br144-hook-noise-gating dispatch log
+
+| # | Agent | Scope | Outcome |
+|---|-------|-------|---------|
+| 1 | br144-build (killed 16:44, deadline miss) | 7 gate sites + config + tests | READ-ONLY mapping only — zero edits (verified: git clean, node --check OK) |
+| 2 | br144-build2 (dispatched ~16:47, deadline 16:57) | full build scope | — |
+
+Digest from #1 (pre-digested for #2): ack sites confirmed at unified-stop.js:975-1010 (outputAllow ack + nextActionHint); subagent-stop-handler.js outputAllow sites; team-idle-handler.js sites; fork-mode chain: withForkModeHint consumers via grep (lib/scripts/hooks), session-context.js:290-345 + :690-760 advisory assembly; user-prompt-handler.js gate regions read at :139 (feature line), :153/:215/:310-364 (envelope). #2 goes STRAIGHT to edits using these anchors.

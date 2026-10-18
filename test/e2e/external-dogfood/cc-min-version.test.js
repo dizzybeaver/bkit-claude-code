@@ -26,6 +26,23 @@ const os = require('node:os');
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 const SESSION_CONTEXT = path.join(PROJECT_ROOT, 'hooks', 'startup', 'session-context.js');
 
+// br144: buildCCVersionAdvisoryContext() is gated behind
+// hooks.advisory.forkModeAdvisory (default false = silent). The advisory-emitter
+// scenarios below assert the emitter's OUTPUT, so enable the flag via an
+// isolated project fixture. CLAUDE_PROJECT_DIR must be set BEFORE the first
+// scenario loads session-context.js — lib/core/platform freezes PROJECT_DIR at
+// its first require, and the config cache (10s TTL) then serves the fixture.
+// Default silence is separately locked by test/contract/br144-advisory-gating.test.js.
+const ADVISORY_FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-e2e-advisory-cfg-'));
+fs.writeFileSync(
+  path.join(ADVISORY_FIXTURE_DIR, 'bkit.config.json'),
+  JSON.stringify({ hooks: { advisory: { forkModeAdvisory: true } } }, null, 2),
+);
+process.env.CLAUDE_PROJECT_DIR = ADVISORY_FIXTURE_DIR;
+process.on('exit', () => {
+  try { fs.rmSync(ADVISORY_FIXTURE_DIR, { recursive: true, force: true }); } catch (_e) { /* noop */ }
+});
+
 let passed = 0;
 let failed = 0;
 

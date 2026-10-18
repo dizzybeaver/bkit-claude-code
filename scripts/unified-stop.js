@@ -12,6 +12,19 @@
 
 const path = require('path');
 const { readStdinBounded, outputAllow, hasInFlightBackgroundWork } = require('../lib/core/io');
+
+// br144: advisory ack emitters are gated by hooks.advisory.ackMessages
+// (default false = silent). Strict boolean true restores; see bkit.config.json.
+let _br144AckCache = null;
+function isAdvisoryEnabled(name) {
+  try {
+    if (_br144AckCache === null) {
+      const { getConfig } = require('../lib/core/config');
+      _br144AckCache = getConfig('hooks.advisory', {}) || {};
+    }
+    return _br144AckCache[name] === true;
+  } catch (_) { return false; }
+}
 const { STDIN_READ_TIMEOUT_MS } = require('../lib/core/constants');
 const { debugLog } = require('../lib/core/debug');
 const { getPdcaStatusFull } = require('../lib/pdca/status');
@@ -987,7 +1000,11 @@ if (!handled) {
     if (hint) nextActionHint = '\n' + hint;
   } catch (_e) { /* fail-silent */ }
 
-  outputAllow(`Stop event processed.${trustInfo}${auditInfo}${copyTip}${nextActionHint}`, 'Stop');
+  if (isAdvisoryEnabled('ackMessages')) { // br144: default false = silent
+    outputAllow(`Stop event processed.${trustInfo}${auditInfo}${copyTip}${nextActionHint}`, 'Stop');
+  } else {
+    outputEmpty();
+  }
 }
 
 // v2.1.12 Sprint A-1 (defect #17 fix): per-turn observability — see

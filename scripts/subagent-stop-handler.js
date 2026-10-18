@@ -18,7 +18,20 @@
 // so top-level return is valid.
 if (require.main !== module) { module.exports = {}; return; }
 
-const { readStdinSync, outputAllow } = require('../lib/core/io');
+const { readStdinSync, outputAllow, outputEmpty } = require('../lib/core/io');
+
+// br144: advisory ack emitters are gated by hooks.advisory.ackMessages
+// (default false = silent). Strict boolean true restores; see bkit.config.json.
+let _br144AckCache = null;
+function isAdvisoryEnabled(name) {
+  try {
+    if (_br144AckCache === null) {
+      const { getConfig } = require('../lib/core/config');
+      _br144AckCache = getConfig('hooks.advisory', {}) || {};
+    }
+    return _br144AckCache[name] === true;
+  } catch (_) { return false; }
+}
 const { debugLog } = require('../lib/core/debug');
 
 function main() {
@@ -30,7 +43,11 @@ function main() {
     hookContext = typeof input === 'string' ? JSON.parse(input) : input;
   } catch (e) {
     debugLog('SubagentStop', 'Failed to parse context', { error: e.message });
-    outputAllow('SubagentStop processed.', 'SubagentStop');
+    if (isAdvisoryEnabled('ackMessages')) { // br144: default false = silent
+      outputAllow('SubagentStop processed.', 'SubagentStop');
+    } else {
+      outputEmpty();
+    }
     return;
   }
 
@@ -38,7 +55,11 @@ function main() {
   try {
     teamModule = require('../lib/team');
   } catch (e) {
-    outputAllow('SubagentStop processed.', 'SubagentStop');
+    if (isAdvisoryEnabled('ackMessages')) { // br144: default false = silent
+      outputAllow('SubagentStop processed.', 'SubagentStop');
+    } else {
+      outputEmpty();
+    }
     return;
   }
 
