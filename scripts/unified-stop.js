@@ -229,6 +229,30 @@ function shouldSkipAutoTransition(hookContext) {
     }
   } catch (_) { /* status unresolvable — no skip */ }
 
+  // (e) br143: session-activity gate (fail-closed session isolation).
+  // The feature entry the auto-transition would advance must be owned by
+  // THIS session. Unowned/legacy entries are a PERMANENT withhold (operator
+  // ruling 2026-10-18) — no adopt-on-fire, no inference backfill.
+  // br143: fail-open closed — see bug_reports/active/br/br143-stop-hook-cross-session-context-poisoning.md
+  try {
+    const { getPdcaStatusFull } = require('../lib/pdca/status');
+    const { evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
+    const status = getPdcaStatusFull();
+    // Same candidate set the stale-evidence gate (d) uses: every registry
+    // feature that a transition could advance.
+    const candidates = Object.entries(status?.features || {});
+    for (const [, entry] of candidates) {
+      const verdict = evaluateSessionGate(entry, hookContext?.session_id);
+      if (!verdict.allowed) {
+        return { skip: true, gate: `session-activity/${verdict.reason}` };
+      }
+    }
+  } catch (_) {
+    // fail-closed: Stop must never block, and must never mis-direct a
+    // transition whose ownership we could not prove (Issue #139 convention).
+    return { skip: true, gate: 'session-activity/error' };
+  }
+
   return { skip: false, gate: null };
 }
 

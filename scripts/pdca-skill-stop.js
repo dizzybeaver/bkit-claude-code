@@ -13,6 +13,8 @@
 
 const fs = require('fs');
 const path = require('path');
+// br143: shared session-activity gate — single source of truth for both stop paths.
+const { OWNER_LEASE_MS, evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
 
 // ============================================================
 // Envelope derivation (br014, fix-br013-014-wave D2) — pure helpers
@@ -132,8 +134,10 @@ function deriveEnvelopeAction(input) {
 // bare-require export below without executing the hook body.
 // ============================================================
 
-/** br039: a feature's ownerSession lease expires after 2h without refresh. */
-const OWNER_LEASE_MS = 2 * 60 * 60 * 1000;
+// br039/br143: a feature's ownerSession lease expires after 2h without
+// refresh. OWNER_LEASE_MS now comes from lib/pdca/session-activity-gate.js
+// (single source of truth; required at module top) so the existing export
+// surface below is unchanged for unified-stop-deps.js consumers.
 
 /**
  * br039: should THIS session's Stop emit the [AUTO-TRANSITION] demand for a
@@ -145,13 +149,10 @@ const OWNER_LEASE_MS = 2 * 60 * 60 * 1000;
  * @returns {{allowed: boolean, reason: 'unowned'|'owner'|'lease-expired'|'foreign-session'}}
  */
 function shouldAutoTransition(entry, currentSessionId, now = Date.now()) {
-  if (!entry || !entry.ownerSession) return { allowed: true, reason: 'unowned' };
-  if (entry.ownerSession === currentSessionId) return { allowed: true, reason: 'owner' };
-  const since = Date.parse(entry.ownerSince);
-  if (Number.isFinite(since) && (now - since) > OWNER_LEASE_MS) {
-    return { allowed: false, reason: 'lease-expired' };
-  }
-  return { allowed: false, reason: 'foreign-session' };
+  // br143: fail-open closed — see bug_reports/active/br/br143-stop-hook-cross-session-context-poisoning.md
+  // Delegation to the shared gate: unowned/legacy entries are now a PERMANENT
+  // withhold (operator ruling 2026-10-18) — no adopt-on-fire, no backfill.
+  return evaluateSessionGate(entry, currentSessionId, now);
 }
 
 /**
