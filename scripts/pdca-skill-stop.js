@@ -188,6 +188,26 @@ function hasCheckEvidence(feature, registryEntry, projectDir) {
 function shouldSkipAutoTransition(input) {
   const fs = require('fs');
   const path = require('path');
+  // br138: session id resolved at function scope — gate (d)'s candidate
+  // filter references it; declaring it inside gate (0)'s block left gate (d)
+  // with an unbound identifier (ReferenceError swallowed by its catch).
+  const sessionId = (input && input.session_id)
+    || process.env.CLAUDE_CODE_SESSION_ID
+    || process.env.CLAUDE_SESSION_ID
+    || null;
+  // (0) br138: chain-top not-applicable short-circuit — a session owning no
+  // transitionable feature has nothing to gate; silent pass-through (design §4).
+  try {
+    const { getPdcaStatusFull } = require('../lib/pdca/status');
+    const { evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
+    const status = getPdcaStatusFull();
+    const owned = Object.entries(status?.features || {})
+      .filter(([, e]) => evaluateSessionGate(e, sessionId).allowed);
+    if (owned.length === 0) {
+      return { skip: false, gate: null };
+    }
+  } catch (_) { /* status unresolvable — fall through to the existing gates */ }
+
   try {
     const { getPdcaStatusPath } = require('../lib/pdca/status');
     const pauseFlag = path.join(path.dirname(getPdcaStatusPath()), 'pdca-pause');
@@ -225,8 +245,11 @@ function shouldSkipAutoTransition(input) {
     // resolution checked the WRONG feature's docs whenever the fired cycle
     // was envelope-bound to a non-primary feature (br006/br015b binding),
     // withholding a legitimate advance that had full evidence on disk.
+    // br138: candidate set session-scoped — global set classified foreign
+    // residue as 'stale-evidence'.
     const candidates = Object.entries(status?.features || {})
       .filter(([, e]) => e && PHASE_DOC_DIRS[e.phase])
+      .filter(([, e]) => evaluateSessionGate(e, sessionId).allowed)
       .map(([name, e]) => ({ name, dir: PHASE_DOC_DIRS[e.phase] }));
     if (candidates.length > 0) {
       // Project root = two levels above .bkit/state/ (status file's parent dir).

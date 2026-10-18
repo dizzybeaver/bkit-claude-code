@@ -171,6 +171,19 @@ function detectActiveAgent(hookContext) {
  * @returns {{skip: boolean, gate: string|null}}
  */
 function shouldSkipAutoTransition(hookContext) {
+  // (0) br138: chain-top not-applicable short-circuit — a session owning no
+  // transitionable feature has nothing to gate; silent pass-through (design §4).
+  try {
+    const { getPdcaStatusFull } = require('../lib/pdca/status');
+    const { evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
+    const status = getPdcaStatusFull();
+    const owned = Object.entries(status?.features || {})
+      .filter(([, e]) => evaluateSessionGate(e, hookContext?.session_id).allowed);
+    if (owned.length === 0) {
+      return { skip: false, gate: null };
+    }
+  } catch (_) { /* status unresolvable — fall through to the existing gates */ }
+
   // (a) operator pause flag — .bkit/state/pdca-pause beside the status file
   try {
     const { getPdcaStatusPath } = require('../lib/pdca/status');
@@ -199,6 +212,10 @@ function shouldSkipAutoTransition(hookContext) {
   // earned. Unresolvable feature/phase does NOT skip.
   try {
     const { getPdcaStatusFull, getPdcaStatusPath } = require('../lib/pdca/status');
+    // br138: bind the shared gate here — gate (0)'s require is block-scoped
+    // to its own try{}; referencing it from gate (d) threw a swallowed
+    // ReferenceError and silently disabled stale-evidence withholding.
+    const { evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
     const status = getPdcaStatusFull();
     const PHASE_DOC_DIRS = {
       plan: 'docs/01-plan/features',
@@ -212,8 +229,11 @@ function shouldSkipAutoTransition(hookContext) {
     // resolution checked the WRONG feature's docs whenever the fired cycle
     // was envelope-bound to a non-primary feature (br006/br015b binding),
     // withholding a legitimate advance that had full evidence on disk.
+    // br138: candidate set session-scoped — global set classified foreign
+    // residue as 'stale-evidence'.
     const candidates = Object.entries(status?.features || {})
       .filter(([, e]) => e && PHASE_DOC_DIRS[e.phase])
+      .filter(([, e]) => evaluateSessionGate(e, hookContext?.session_id).allowed)
       .map(([name, e]) => ({ name, dir: PHASE_DOC_DIRS[e.phase] }));
     if (candidates.length > 0) {
       // Project root = two levels above .bkit/state/ (status file's parent dir).

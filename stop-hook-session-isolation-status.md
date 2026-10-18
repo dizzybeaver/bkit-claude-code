@@ -28,3 +28,14 @@ Registry phase: do. Bug-fix path per work.md §45.9 (no gap/iterate/qa).
 
 - Dispatch 1: 10:50 → killed 11:01 (miss)
 - Dispatch 2: 11:04 → deadline 11:14 (armed). SECOND MISS = MAIN finishes in-session.
+
+---
+
+## br138-stale-evidence-passthrough dispatch log
+
+| # | Agent | Scope | Outcome |
+|---|-------|-------|---------|
+| 1 | br138-build (killed 12:06, deadline miss) | gate (0) + gate (d) scoping both scripts + tests | Code LANDED both scripts (verified: node --check OK; br138 comments unified-stop :174/:228, pdca-skill-stop :191/:246); test file NOT written |
+| 2 | br138-build2 (dispatched ~12:08, deadline 12:18) | test/contract/stale-evidence-passthrough.test.js + self-checks | — |
+
+Remaining for dispatch 2: ONLY the new contract test file (design §7 TS-1..TS-7) + self-check runs. Code side complete; do NOT re-edit scripts.
