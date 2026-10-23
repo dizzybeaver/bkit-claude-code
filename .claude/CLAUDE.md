@@ -56,3 +56,14 @@ triggers fires (quality gate fail / iteration exhausted / budget exceeded /
 phase timeout).
 
 For deep-dive Korean guidance, see `docs/06-guide/sprint-management.guide.md`.
+
+## Plugin Cache Sync
+
+The installed plugin (`~/.claude/plugins/cache/bkit-marketplace/bkit/<ver>`) does NOT update from git — live hooks run from the cache, not this repo. To verify installed-plugin currency or push repo fixes live, use the sync tool:
+
+```bash
+tools/brfix-wave-probes/sync_plugin_cache.sh            # dry-run drift check
+tools/brfix-wave-probes/sync_plugin_cache.sh --apply    # backup + rsync cache
+```
+
+Do NOT judge freshness by `installed_plugins.json` (gitCommitSha/lastUpdated track marketplace installs, not this sync).

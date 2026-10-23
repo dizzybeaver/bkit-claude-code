@@ -173,6 +173,10 @@ function runPdcaBypassDetection(ctx) {
 function runPdcaGuidance(ctx, pdcaCtx, taskCtx) {
   const { pdcaLevel, lineCount } = taskCtx;
   const { designDoc, planDoc, feature } = pdcaCtx;
+  // br146: PDCA guidance text ("Minor change (N lines). PDCA optional." etc.)
+  // is advisory context, gated by hooks.advisory.sizeClassifier.
+  // absent/false = silent (default); strict boolean true restores injection.
+  if (require('../lib/core/config').getConfig('hooks.advisory.sizeClassifier') !== true) return [];
   const parts = [];
   switch (pdcaLevel) {
     case 'none':
@@ -363,6 +367,10 @@ function runScopeLimiter(ctx) {
        * than blocking ordinary use.
        */
       const HARD_DENY_RULES = ['DENIED_PATH', 'SYMLINK_ESCAPE', 'NULL_BYTE'];
+      // br146: soft NOT_IN_SCOPE advisories are context noise by default;
+      // gated by hooks.advisory.scopeLimitAdvisory (absent/false = silent).
+      // The HARD_DENY_RULES branch below is unaffected.
+      if (require('../lib/core/config').getConfig('hooks.advisory.scopeLimitAdvisory') !== true) return null;
       const reason = `Scope limit: ${scopeCheck.reason || 'Path not allowed at current automation level'}`;
       if (HARD_DENY_RULES.includes(scopeCheck.rule)) {
         return {

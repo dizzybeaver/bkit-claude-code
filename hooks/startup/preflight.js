@@ -107,9 +107,15 @@ function run() {
   }
 
   try {
-    const { checkCCVersion } = require('../../lib/infra/cc-version-checker');
-    const warning = renderCCVersionWarning(checkCCVersion());
-    if (warning) lines.push(`⚠️ ${warning}`);
+    // br147: this is the SECOND emitter of the fork-mode CC advisory (br144
+    // gated only the session-context.js copy). Same key, same default:
+    // hooks.advisory.forkModeAdvisory absent/false = silent.
+    const { getConfig } = require('../../lib/core/config');
+    if (getConfig('hooks.advisory.forkModeAdvisory') === true) {
+      const { checkCCVersion } = require('../../lib/infra/cc-version-checker');
+      const warning = renderCCVersionWarning(checkCCVersion());
+      if (warning) lines.push(`⚠️ ${warning}`);
+    }
   } catch (e) {
     debugLog('SessionStart', 'preflight CC version check failed', { error: e.message });
   }

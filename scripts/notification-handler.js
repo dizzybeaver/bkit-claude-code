@@ -52,7 +52,10 @@ try {
 }
 
 // Step 2: Enrich idle notifications with PDCA + Sprint context (v2.1.13)
-if (notificationType === 'idle_prompt') {
+// br146: idle-notification PDCA/Sprint enrichment is advisory context, gated
+// by hooks.advisory.pdcaStatusEcho. absent/false = skip enrichment (default).
+const { getConfig: _notifAdv } = require('../lib/core/config');
+if (notificationType === 'idle_prompt' && _notifAdv('hooks.advisory.pdcaStatusEcho') === true) {
   try {
     const pdcaStatus = getPdcaStatusFull();
     const fragments = [];

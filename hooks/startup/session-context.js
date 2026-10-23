@@ -23,7 +23,7 @@ const path = require('path');
 const { detectLevel } = require('../../lib/pdca/level');
 const { debugLog } = require('../../lib/core/debug');
 const { getPdcaStatusFull } = require('../../lib/pdca/status');
-const { getUIConfig } = require('../../lib/core/config');
+const { getUIConfig, getConfig } = require('../../lib/core/config');
 const { applyBudget } = require('../../lib/core/context-budget');
 // v2.1.10 (ENH-167 final): removed hard-coded "v2.1.9" — uses centralized BKIT_VERSION
 const { BKIT_VERSION } = require('../../lib/core/version');
@@ -718,14 +718,24 @@ function build(_input, context) {
   // v2.1.20 F10 (ENH-323): CC version advisory — surfaces first if CC < v2.1.143.
   // Placed before other sections so the warning is not budget-trimmed.
   if (_ciSections.includes('ccVersionAdvisory'))   additionalContext += buildCCVersionAdvisoryContext();
-  if (_ciSections.includes('onboarding'))          additionalContext += buildOnboardingContext(onboardingData);
-  if (_ciSections.includes('agentTeams'))          additionalContext += buildAgentTeamsContext(detectedLevel);
-  if (_ciSections.includes('outputStyles'))        additionalContext += buildOutputStylesAndMemoryContext(detectedLevel);
-  if (_ciSections.includes('bkendMcp'))            additionalContext += buildBkendMcpContext(detectedLevel);
-  if (_ciSections.includes('enterpriseBatch'))     additionalContext += buildEnterpriseBatchContext(detectedLevel);
-  if (_ciSections.includes('pdcaCoreRules'))       additionalContext += buildPdcaCoreRules();
-  if (_ciSections.includes('automation'))          additionalContext += buildAutomationContext(triggerTable);
-  if (_ciSections.includes('versionEnhancements')) additionalContext += buildVersionEnhancementsContext(detectedLevel);
+  // br146: onboarding text is advisory context, gated by
+  // hooks.advisory.onboarding. absent/false = silent (default).
+  if (_ciSections.includes('onboarding') && getConfig('hooks.advisory.onboarding') === true)
+    additionalContext += buildOnboardingContext(onboardingData);
+  // startup-sections-advisory-gating: gated by hooks.advisory.agentTeams (default false)
+  if (_ciSections.includes('agentTeams') && getConfig('hooks.advisory.agentTeams') === true) additionalContext += buildAgentTeamsContext(detectedLevel);
+  // startup-sections-advisory-gating: gated by hooks.advisory.outputStyles (default false)
+  if (_ciSections.includes('outputStyles') && getConfig('hooks.advisory.outputStyles') === true) additionalContext += buildOutputStylesAndMemoryContext(detectedLevel);
+  // startup-sections-advisory-gating: gated by hooks.advisory.bkendMcp (default false)
+  if (_ciSections.includes('bkendMcp') && getConfig('hooks.advisory.bkendMcp') === true) additionalContext += buildBkendMcpContext(detectedLevel);
+  // startup-sections-advisory-gating: gated by hooks.advisory.enterpriseBatch (default false)
+  if (_ciSections.includes('enterpriseBatch') && getConfig('hooks.advisory.enterpriseBatch') === true) additionalContext += buildEnterpriseBatchContext(detectedLevel);
+  // startup-sections-advisory-gating: gated by hooks.advisory.pdcaCoreRules (default false)
+  if (_ciSections.includes('pdcaCoreRules') && getConfig('hooks.advisory.pdcaCoreRules') === true) additionalContext += buildPdcaCoreRules();
+  // startup-sections-advisory-gating: gated by hooks.advisory.automation (default false)
+  if (_ciSections.includes('automation') && getConfig('hooks.advisory.automation') === true) additionalContext += buildAutomationContext(triggerTable);
+  // startup-sections-advisory-gating: gated by hooks.advisory.versionEnhancements (default false)
+  if (_ciSections.includes('versionEnhancements') && getConfig('hooks.advisory.versionEnhancements') === true) additionalContext += buildVersionEnhancementsContext(detectedLevel);
 
   // ENH-240: Context budget guard (CC 10,000-char cap defense)
   try {

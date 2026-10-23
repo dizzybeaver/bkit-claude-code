@@ -129,6 +129,13 @@ if (restoreWarnings.length > 0) {
 // Order: Session Context → Progress Bar → Workflow Map → Impact View → Agent Panel → Control Panel
 const dashboardSections = [];
 
+// br146: dashboard sections (progress bar / workflow map / impact view /
+// agent panel / control panel) are advisory context, gated by
+// hooks.advisory.dashboard. absent/false = silent (default); strict boolean
+// true restores injection (ui.dashboard.enabled still applies).
+const { getConfig: _dashAdv } = require('../lib/core/config');
+const advisoryDashboardEnabled = _dashAdv('hooks.advisory.dashboard') === true;
+
 // ENH-226 (Issue #77 Phase A): dashboard opt-out gate
 // When ui.dashboard.enabled=false, skip rendering all 5 boxes
 // (progress / workflow / impact / agent / control).
@@ -213,7 +220,7 @@ try {
   }
 } catch (_) { /* non-critical */ }
 
-if (pdcaStatus && pdcaStatus.primaryFeature && _uiDashboardEnabled) {
+if (pdcaStatus && pdcaStatus.primaryFeature && _uiDashboardEnabled && advisoryDashboardEnabled) {
   // ENH-226: per-section opt-in control via _uiDashboardSections array
   // 6. Progress Bar
   if (_uiDashboardSections.includes('progress')) try {

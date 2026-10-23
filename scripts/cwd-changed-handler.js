@@ -82,6 +82,10 @@ if (isProjectTransition) {
 
 // Output context for Claude
 if (indicators.hasBkit) {
+  // br146: the cwd-change note is advisory context, gated by
+  // hooks.advisory.cwdChangeNote. absent/false = silent (default).
+  const { getConfig } = require('../lib/core/config');
+  if (getConfig('hooks.advisory.cwdChangeNote') !== true) process.exit(0);
   let contextMsg = `Project changed: bkit project at ${path.basename(newCwd)}`;
   if (pdcaPhase && primaryFeature) {
     contextMsg += ` (PDCA: ${pdcaPhase}, feature: ${primaryFeature})`;
