@@ -46,23 +46,33 @@ try {
   let agentOutput = '';
   try { agentOutput = readHookText(readStdinSync()); } catch (_) { agentOutput = ''; }
 
+  /*
+   * br159: collect only what the analyzer actually REPORTED. The 75/0/80
+   * fallbacks fabricated a measurement out of a parse failure — a gate then
+   * read codeQualityScore 75 that no analyzer ever produced, which is the
+   * same false-assurance class as the fabricated-0 match rate (v2.1.34).
+   * Design Ref: §2 module-1
+   */
   // M2: Code Quality Score — extract from code-analyzer output
   const qualityPattern = /(Quality|quality)\s*(Score|score|점수)[^0-9]*(\d+)/i;
   const qualityMatch = agentOutput.match(qualityPattern);
-  const qualityScore = qualityMatch ? parseInt(qualityMatch[3], 10) : 75; // default baseline
-  mc.collectMetric('M2', f, qualityScore, 'code-analyzer');
+  if (qualityMatch) {
+    mc.collectMetric('M2', f, parseInt(qualityMatch[3], 10), 'code-analyzer');
+  }
 
   // M3: Critical Issue Count — extract from output
   const criticalPattern = /(Critical|critical|심각|重大)[^0-9]*(\d+)/i;
   const criticalMatch = agentOutput.match(criticalPattern);
-  const criticalCount = criticalMatch ? parseInt(criticalMatch[2], 10) : 0;
-  mc.collectMetric('M3', f, criticalCount, 'code-analyzer');
+  if (criticalMatch) {
+    mc.collectMetric('M3', f, parseInt(criticalMatch[2], 10), 'code-analyzer');
+  }
 
   // M7: Convention Compliance — extract from output
   const conventionPattern = /(Convention|convention|컨벤션|규약)\s*(Compliance|compliance|준수율)?[^0-9]*(\d+)/i;
   const conventionMatch = agentOutput.match(conventionPattern);
-  const conventionRate = conventionMatch ? parseInt(conventionMatch[3], 10) : 80; // default baseline
-  mc.collectMetric('M7', f, conventionRate, 'code-analyzer');
+  if (conventionMatch) {
+    mc.collectMetric('M7', f, parseInt(conventionMatch[3], 10), 'code-analyzer');
+  }
 } catch (_) {}
 
 // v1.4.0: Stop hook에 맞는 스키마 사용

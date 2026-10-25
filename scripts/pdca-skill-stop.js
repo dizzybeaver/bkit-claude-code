@@ -60,8 +60,6 @@ function parsePdcaSkillArgs(rawArgs) {
     // route through lib/pdca/validate-name.js if it exposes a validator
     try {
       const { normalizeFeatureName, isValidFeatureName } = require('../lib/pdca/validate-name');
-      // READ lib/pdca/validate-name.js FIRST to see its actual exports and use them
-      // correctly — the line above is the expected shape; adapt to reality.
       if (typeof isValidFeatureName === 'function' && !isValidFeatureName(featureToken)) {
         featureToken = undefined;
       } else if (typeof normalizeFeatureName === 'function') {

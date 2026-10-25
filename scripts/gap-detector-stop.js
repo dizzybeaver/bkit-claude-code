@@ -71,7 +71,17 @@ function isKnownFeature(feature, status) {
 // without a real hook payload. CommonJS module body is implicitly an IIFE,
 // so top-level return is valid.
 if (require.main !== module) {
-  module.exports = { parseMatchRate, extractFeatureFromText, isKnownFeature, matchRatePattern };
+  const { recordAnalysisMetrics } = require('../lib/quality/metrics-collector');
+  module.exports = {
+    parseMatchRate, extractFeatureFromText, isKnownFeature, matchRatePattern,
+    // br159 FR-02-alt: this hook's parser never runs for Agent-tool dispatches
+    // (SubagentStop handler does not dispatch; unified-stop's detectActiveAgent
+    // has no live source for agent_name on the main Stop) — a harness-side
+    // wiring gap, so the orchestrating session records the agent's measured
+    // values through this sanctioned entry instead.
+    // Design Ref: §2 module-1
+    recordAnalysisMetrics,
+  };
 } else {
 
 const { readStdinSync, readHookText, outputStopSurface } = require('../lib/core/io');
