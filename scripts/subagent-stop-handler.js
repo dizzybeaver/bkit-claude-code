@@ -11,12 +11,131 @@
  */
 
 
+// ============================================================
+// br162: analyzer dispatch bridge (pure, testable — no top-level lib I/O)
+//
+// SubagentStop is the only event that fires with the dispatched analyzer's
+// OWN transcript in hand, yet the handler never fed it to the analysis
+// parsers — so a gap-detector that completed with "Overall Match Rate:
+// 95.8%" left the registry matchRate null (br159 forensics; harness-side
+// wiring gap). This bridge hands the agent's final report to br159's
+// sanctioned recording entry. Parsers and the entry are reused UNCHANGED.
+// ============================================================
+
+// Design Ref: §2 — O(1) type gate, checked before any I/O. Both forms are
+// accepted: the live harness sends the plugin-prefixed agent_type (observed
+// 'bkit:gap-detector' in .bkit/runtime/hook-dispatch.ndjson, 2026-10-25),
+// while older versions sent the bare name.
+const ANALYZER_TYPES = new Set([
+  'bkit:gap-detector', 'bkit:code-analyzer',
+  'gap-detector', 'code-analyzer',
+]);
+
+// Report markers per analyzer family. A trailing assistant line without one
+// of these is not a measurement report and is skipped.
+const ANALYZER_REPORT_MARKER = /Overall Match Rate|codeQualityScore/;
+
+/** Scan the last ~50 JSONL lines for the last assistant message carrying a metric marker. */
+function _extractAnalyzerReport(transcriptPath) {
+  const fs = require('fs');
+  const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+  const start = Math.max(0, lines.length - 51);
+  for (let i = lines.length - 1; i >= start; i--) {
+    const line = lines[i];
+    if (!line) continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || entry.type !== 'assistant') continue;
+    const content = entry.message && entry.message.content;
+    let text = '';
+    if (typeof content === 'string') {
+      text = content;
+    } else if (Array.isArray(content)) {
+      text = content
+        .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+        .map((b) => b.text)
+        .join('\n');
+    }
+    if (text && ANALYZER_REPORT_MARKER.test(text)) return text;
+  }
+  return null;
+}
+
+/**
+ * br162 bridge: record a dispatched analyzer's measured metrics from its
+ * SubagentStop payload. Deny-biased — any failure means NO record.
+ *
+ * @param {Object} hookContext - SubagentStop payload
+ * @param {string} agentType - extracted agent_type ('unknown' when absent)
+ * @returns {{dispatched: boolean, recorded?: boolean, reason?: string}}
+ */
+function dispatchAnalyzerMetrics(hookContext, agentType) {
+  // Design Ref: §2 — the gate runs before any I/O; a non-analyzer stop never
+  // reaches a single read.
+  if (!ANALYZER_TYPES.has(agentType)) return { dispatched: false };
+  try {
+    const transcriptPath = hookContext && hookContext.transcript_path;
+    if (typeof transcriptPath !== 'string' || !transcriptPath) {
+      return { dispatched: true, recorded: false, reason: 'no-transcript' };
+    }
+    const report = _extractAnalyzerReport(transcriptPath);
+    if (!report) return { dispatched: true, recorded: false, reason: 'no-report' };
+
+    // br159 surfaces, reused unchanged: parsers + sanctioned recording entry.
+    const { parseMatchRate, extractFeatureFromText, recordAnalysisMetrics } =
+      require('./gap-detector-stop');
+    const { getPdcaStatusFull } = require('../lib/pdca/status');
+    const source = `subagent-stop dispatch ${new Date().toISOString().slice(0, 10)}`;
+
+    // Feature: report text first, registry primaryFeature fallback, else deny.
+    let feature = extractFeatureFromText(report);
+    if (!feature) feature = getPdcaStatusFull()?.primaryFeature || null;
+    if (!feature) return { dispatched: true, recorded: false, reason: 'no-feature' };
+
+    const isGapDetector = /gap-detector/.test(agentType);
+    if (isGapDetector) {
+      const matchRate = parseMatchRate(report);
+      if (matchRate === null) {
+        return { dispatched: true, recorded: false, reason: 'no-rate' };
+      }
+      const r = recordAnalysisMetrics(feature, { matchRate }, source);
+      return { dispatched: true, recorded: r.success === true, reason: r.reason };
+    }
+
+    // code-analyzer: M2/M3/M4 markers (same patterns as scripts/analysis-stop.js).
+    const metrics = {};
+    const q = report.match(/(Quality|quality)\s*(Score|score|점수)[^0-9]*(\d+)/);
+    if (q) metrics.codeQualityScore = parseInt(q[3], 10);
+    const c = report.match(/(criticalIssueCount|Critical|critical|심각|重大)[^0-9]*(\d+)/i);
+    if (c) metrics.criticalIssueCount = parseInt(c[c.length - 1], 10);
+    const a = report.match(/(API|api)\s*(Compliance|compliance)[^0-9]*(\d+)/i);
+    if (a) metrics.apiComplianceRate = parseInt(a[a.length - 1], 10);
+    if (Object.keys(metrics).length === 0) {
+      return { dispatched: true, recorded: false, reason: 'no-metrics' };
+    }
+    const r = recordAnalysisMetrics(feature, metrics, source);
+    return { dispatched: true, recorded: r.success === true, reason: r.reason };
+  } catch (e) {
+    // Defensive: any error → silent skip. The SubagentStop surface must keep
+    // its original behavior; only debugLog witnesses the miss.
+    try {
+      require('../lib/core/debug').debugLog('SubagentStop', 'analyzer dispatch failed', {
+        error: e.message,
+      });
+    } catch { /* debugLog unavailable — still silent */ }
+    return { dispatched: true, recorded: false, reason: 'error' };
+  }
+}
+
 // v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
 // is require()-d instead of executed as a hook entrypoint, return
 // immediately so no stale stdout (decisions, advisory messages) is emitted
 // without a real hook payload. CommonJS module body is implicitly an IIFE,
 // so top-level return is valid.
-if (require.main !== module) { module.exports = {}; return; }
+if (require.main !== module) {
+  module.exports = { ANALYZER_TYPES, dispatchAnalyzerMetrics };
+  return;
+}
 
 const { readStdinSync, outputAllow, outputEmpty } = require('../lib/core/io');
 
@@ -72,6 +191,14 @@ function main() {
   const agentId = hookContext.agent_id || null;
   const agentType = hookContext.agent_type || 'unknown';
   const agentName = agentType !== 'unknown' ? agentType : (agentId || 'unknown');
+
+  // br162: analyzer-typed completions feed their final report to the analysis
+  // parsers. Non-analyzer stops: existing flow, byte-identical (the gate
+  // returns before any I/O). Design Ref: §2
+  const analyzerDispatch = dispatchAnalyzerMetrics(hookContext, agentType);
+  if (analyzerDispatch.dispatched) {
+    debugLog('SubagentStop', 'analyzer dispatch', analyzerDispatch);
+  }
 
   // Determine exit status (transcript_path exists = normal exit)
   const isSuccess = hookContext.transcript_path != null
