@@ -268,6 +268,34 @@ function shouldSkipAutoTransition(input) {
   return { skip: false, gate: null };
 }
 
+/**
+ * br155 FR-08: decide whether THIS Stop's phase write may claim ownership of
+ * the feature row. The pre-br155 code stamped ownerSession: fireSessionId
+ * UNCONDITIONALLY, so any session whose Stop bound the feature via the
+ * registry fallback tiers (primaryFeature / unique-phase / recorded action —
+ * all shared state, possibly written by a DIFFERENT session) adopted the
+ * feature it never fired and then passed the read-side gate as 'owner'
+ * (phantom adoption). The claim is now evidence-gated: the transcript
+ * envelope (deriveEnvelopeAction — the most recent pdca Skill tool_use in
+ * THIS session's transcript) must prove a real pdca fire, and when the
+ * envelope names a feature it must be the bound feature. A genuine fire
+ * from a different session than the recorded owner still takes the lease
+ * over (the sanctioned br039 takeover path, now with evidence).
+ * Pure — no fs, no registry writes; tests require it via the bare-require
+ * export below.
+ * @param {Object|null} envelope - {action, feature} from deriveEnvelopeAction
+ * @param {string|null} boundFeature - the feature this Stop's write targets
+ * @param {string|null} sessionId - the firing session id (payload/env)
+ * @param {Date} [now] - injectable clock
+ * @returns {{ownerSession: string, ownerSince: string}|{}}
+ */
+function resolveOwnershipStamp(envelope, boundFeature, sessionId, now = new Date()) {
+  if (!sessionId) return {};
+  if (!envelope || !envelope.action) return {};
+  if (envelope.feature && envelope.feature !== boundFeature) return {};
+  return { ownerSession: sessionId, ownerSince: now.toISOString() };
+}
+
 // v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
 // is require()-d instead of executed as a hook entrypoint, export only
 // the pure helpers so no stale stdout (decisions, advisory messages) is
@@ -277,7 +305,7 @@ if (require.main !== module) {
   module.exports = {
     ENVELOPE_ACTIONS, isPdcaSkillName, parsePdcaSkillArgs, findPdcaEnvelope,
     deriveEnvelopeAction, OWNER_LEASE_MS, shouldAutoTransition, hasCheckEvidence,
-    shouldSkipAutoTransition,
+    shouldSkipAutoTransition, resolveOwnershipStamp,
   };
 } else {
 
@@ -681,15 +709,27 @@ if (nextStep && nextStep.message) {
     if (autoTrigger) {
       if (autoTrigger.complete) {
         // v2.1.7: PDCA cycle completion (Issue #79 P5 fix)
-        guidance += [
-          '',
-          '',
-          `[PDCA-COMPLETE] Feature "${feature}" PDCA cycle finished successfully.`,
-          `All phases (plan > design > do > check > qa > report) completed.`,
-          `Generate the completion summary and proceed to the next task.`,
-          `Do NOT ask what to do next. The cycle is done.`,
-        ].join('\n');
-        debugLog('Skill:pdca:Stop', 'PDCA cycle completed', { feature, action });
+        // br155 FR-10: PDCA-COMPLETE is a directive emission about feature F
+        // and must clear the same session-ownership gate as AUTO-TRANSITION —
+        // a foreign/unowned session gets no completion demand.
+        const completeOwnership = shouldAutoTransition(
+          currentStatus?.features?.[feature], fireSessionId
+        );
+        if (completeOwnership.allowed) {
+          guidance += [
+            '',
+            '',
+            `[PDCA-COMPLETE] Feature "${feature}" PDCA cycle finished successfully.`,
+            `All phases (plan > design > do > check > qa > report) completed.`,
+            `Generate the completion summary and proceed to the next task.`,
+            `Do NOT ask what to do next. The cycle is done.`,
+          ].join('\n');
+          debugLog('Skill:pdca:Stop', 'PDCA cycle completed', { feature, action });
+        } else {
+          debugLog('Skill:pdca:Stop', 'PDCA-COMPLETE suppressed by session ownership (br155 FR-10)', {
+            feature, reason: completeOwnership.reason, fireSessionId,
+          });
+        }
       } else if (
         action === 'check' &&
         !hasCheckEvidence(feature, currentStatus?.features?.[feature])
@@ -783,14 +823,18 @@ if (action && feature && ['plan', 'design', 'do', 'analyze', 'check', 'iterate',
     }
   }
 
-  // br039: stamp ownership on every phase write. Unconditional overwrite IS
-  // the sanctioned takeover path — a /pdca fire from a different session than
-  // the recorded ownerSession takes the lease over by firing.
+  // br039/br155: stamp ownership on the phase write, EVIDENCE-GATED (FR-08).
+  // The pre-br155 unconditional claim let a session that never fired the
+  // feature adopt it via the shared-state fallback tiers and then pass the
+  // read-side gate as 'owner' (phantom adoption). resolveOwnershipStamp
+  // permits the claim only when this session's transcript envelope proves a
+  // real pdca fire for the bound feature — which still covers the sanctioned
+  // br039 takeover (a foreign session that genuinely fires takes the lease).
+  // Design Ref: §3.1
   updatePdcaStatus(feature, currentPhase, {
     lastAction: action,
     timestamp: new Date().toISOString(),
-    ownerSession: fireSessionId,
-    ownerSince: new Date().toISOString(),
+    ...resolveOwnershipStamp(envelope, feature, fireSessionId),
   });
 
   debugLog('Skill:pdca:Stop', 'PDCA status updated', {

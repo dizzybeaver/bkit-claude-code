@@ -41,7 +41,7 @@ run_test() {
 
   if [ ! -f "$test_file" ]; then
     echo -e "${RED}✗ Test file not found: $test_file${NC}"
-    ((TOTAL_FAIL++))
+    ((TOTAL_FAIL += 1))
     return 1
   fi
 
@@ -83,20 +83,20 @@ if [ "$TEST_TYPE" = "e2e" ] || [ "$TEST_TYPE" = "all" ]; then
   echo -e "${BLUE}[E2E Group 1]${NC} Eval Benchmark Tests (20 TC)"
   if run_test "$TEST_DIR/e2e/eval-benchmark.test.js" "E2E Benchmark (20 TC)" "node"; then
     echo -e "${GREEN}✓ E2E Benchmark tests passed${NC}"
-    ((TOTAL_PASS++))
+    ((TOTAL_PASS += 1))
   else
     echo -e "${RED}✗ E2E Benchmark tests failed${NC}"
-    ((TOTAL_FAIL++))
+    ((TOTAL_FAIL += 1))
   fi
 
   # E2E-002: run-e2e.sh (60 TC)
   echo -e "${BLUE}[E2E Group 2]${NC} CLI Command Tests (60 TC)"
   if run_test "$TEST_DIR/e2e/run-e2e.sh" "E2E CLI Commands (60 TC)" "bash"; then
     echo -e "${GREEN}✓ E2E CLI tests passed${NC}"
-    ((TOTAL_PASS++))
+    ((TOTAL_PASS += 1))
   else
     echo -e "${YELLOW}⏭ E2E CLI tests (expected for CI environment)${NC}"
-    ((TOTAL_SKIP++))
+    ((TOTAL_SKIP += 1))
   fi
 fi
 
@@ -113,40 +113,40 @@ if [ "$TEST_TYPE" = "perf" ] || [ "$TEST_TYPE" = "all" ]; then
   echo -e "${BLUE}[PRF Group 1]${NC} Core Function Performance (25 TC)"
   if run_test "$TEST_DIR/performance/core-function-perf.test.js" "Core Function Perf (25 TC)" "node"; then
     echo -e "${GREEN}✓ Core function tests passed${NC}"
-    ((TOTAL_PASS++))
+    ((TOTAL_PASS += 1))
   else
     echo -e "${RED}✗ Core function tests failed${NC}"
-    ((TOTAL_FAIL++))
+    ((TOTAL_FAIL += 1))
   fi
 
   # HKP-001~015: hook-perf.test.js (15 TC)
   echo -e "${BLUE}[PRF Group 2]${NC} Hook Performance Tests (15 TC)"
   if run_test "$TEST_DIR/performance/hook-perf.test.js" "Hook Performance (15 TC)" "node"; then
     echo -e "${GREEN}✓ Hook performance tests passed${NC}"
-    ((TOTAL_PASS++))
+    ((TOTAL_PASS += 1))
   else
     echo -e "${RED}✗ Hook performance tests failed${NC}"
-    ((TOTAL_FAIL++))
+    ((TOTAL_FAIL += 1))
   fi
 
   # BMP-001~015: benchmark-perf.test.js (15 TC)
   echo -e "${BLUE}[PRF Group 3]${NC} Benchmark Performance Tests (15 TC)"
   if run_test "$TEST_DIR/performance/benchmark-perf.test.js" "Benchmark Perf (15 TC)" "node"; then
     echo -e "${GREEN}✓ Benchmark performance tests passed${NC}"
-    ((TOTAL_PASS++))
+    ((TOTAL_PASS += 1))
   else
     echo -e "${RED}✗ Benchmark performance tests failed${NC}"
-    ((TOTAL_FAIL++))
+    ((TOTAL_FAIL += 1))
   fi
 
   # MLP-001~015: module-load-perf.test.js (15 TC)
   echo -e "${BLUE}[PRF Group 4]${NC} Module Loading Performance (15 TC)"
   if run_test "$TEST_DIR/performance/module-load-perf.test.js" "Module Load Perf (15 TC)" "node"; then
     echo -e "${GREEN}✓ Module loading tests passed${NC}"
-    ((TOTAL_PASS++))
+    ((TOTAL_PASS += 1))
   else
     echo -e "${RED}✗ Module loading tests failed${NC}"
-    ((TOTAL_FAIL++))
+    ((TOTAL_FAIL += 1))
   fi
 fi
 

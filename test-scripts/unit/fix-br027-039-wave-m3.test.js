@@ -112,11 +112,15 @@ describe('br039: shouldAutoTransition session-ownership guard', () => {
       .toEqual({ allowed: false, reason: 'foreign-session' });
   });
 
-  test('no ownerSession (legacy entry) -> allowed (old behavior)', () => {
+  test('no ownerSession (legacy entry) -> withheld (br143 fail-closed)', () => {
+    // br143 (operator ruling 2026-10-18) superseded the pre-br143 allow this
+    // test used to record as "old behavior": unowned/legacy entries are a
+    // PERMANENT withhold (no adopt-on-fire, no backfill), and a missing entry
+    // is withheld as no-activity. See lib/pdca/session-activity-gate.js.
     expect(shouldAutoTransition({ phase: 'design' }, 'sess-A', NOW))
-      .toEqual({ allowed: true, reason: 'unowned' });
+      .toEqual({ allowed: false, reason: 'unowned' });
     expect(shouldAutoTransition(null, 'sess-A', NOW))
-      .toEqual({ allowed: true, reason: 'unowned' });
+      .toEqual({ allowed: false, reason: 'no-activity' });
   });
 
   test('foreign owner but lease expired -> blocked as lease-expired (>2h)', () => {

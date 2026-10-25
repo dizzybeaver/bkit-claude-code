@@ -118,8 +118,14 @@ describe('br034: completePdcaFeature requireDocs bypass', () => {
   test('completes a doc-less feature instead of silently no-oping', () => {
     seedStatus();
 
-    // tmp project has no docs/ — the default requireDocs:true gate would
-    // block this write entirely before the fix.
+    // br150-152 ghost-guard: completePdcaFeature now fails closed
+    // (E-INVALID-STATE, no write) for a name with no registry row, so the
+    // feature must be registered first (same seeding idiom as the br030
+    // test above — tmp project has no docs/). br034's contract — completion
+    // must not be blocked by missing docs — still holds for a REGISTERED
+    // feature; the ghost-row refusal itself is covered by
+    // test/unit/core-lifecycle-br150.test.js.
+    updatePdcaStatus('docless-feature', 'do', {}, { requireDocs: false });
     completePdcaFeature('docless-feature');
 
     const status = readStatus();

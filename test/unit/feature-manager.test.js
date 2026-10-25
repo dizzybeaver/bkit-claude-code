@@ -9,8 +9,17 @@
  */
 
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { assert, skip, summary, reset } = require('../helpers/assert');
 reset();
+
+// br158: sandbox the registry — FM-010 registers/releases real features and
+// previously wrote the LIVE .bkit state at repo root (leaked 'test-fm010' row;
+// releaseFeature clears the active list but not the features map).
+const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'fm-test-'));
+fs.mkdirSync(path.join(SANDBOX, '.bkit', 'state'), { recursive: true });
+process.env.CLAUDE_PROJECT_DIR = SANDBOX;
 
 console.log('\n=== feature-manager.test.js (20 TC) ===\n');
 

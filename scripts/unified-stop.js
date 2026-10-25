@@ -995,9 +995,27 @@ if (!handled) {
   try {
     const { generateGeneric } = require('../lib/orchestrator/next-action-engine');
     const { getPdcaStatusFull: psf } = require('../lib/pdca/status');
+    // br155 FR-10: generateGeneric emits "/pdca <phase> <primaryFeature>"
+    // next-step guidance from shared registry state. Route it through the
+    // session-activity gate — a session that does not OWN the primary
+    // feature gets no PDCA next-action directive (same rule the
+    // AUTO-TRANSITION demand already obeys).
+    const { evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
     const pdcaStatus = (typeof psf === 'function') ? psf() : null;
-    const hint = generateGeneric({ activeSkill, activeAgent, pdcaStatus });
-    if (hint) nextActionHint = '\n' + hint;
+    const primaryFeature = pdcaStatus && pdcaStatus.primaryFeature;
+    const gateAllowsHint = !primaryFeature
+      || evaluateSessionGate(
+        (pdcaStatus && pdcaStatus.features && pdcaStatus.features[primaryFeature]) || null,
+        hookContext && hookContext.session_id
+      ).allowed;
+    if (gateAllowsHint) {
+      const hint = generateGeneric({ activeSkill, activeAgent, pdcaStatus });
+      if (hint) nextActionHint = '\n' + hint;
+    } else {
+      debugLog('UnifiedStop', 'next-action hint withheld (session-activity gate, br155 FR-10)', {
+        primaryFeature,
+      });
+    }
   } catch (_e) { /* fail-silent */ }
 
   if (isAdvisoryEnabled('ackMessages')) { // br144: default false = silent

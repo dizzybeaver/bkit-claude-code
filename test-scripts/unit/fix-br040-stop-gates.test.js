@@ -31,6 +31,34 @@ const { shouldSkipAutoTransition: skillStopGate } = skillStopModule;
 // for; the fixture is created only inside this suite's tmpdir.
 const PAUSE_MARKER = ['pdca', 'pause'].join('-');
 
+// br138 gate (0) precondition: shouldSkipAutoTransition short-circuits to
+// {skip:false, gate:null} when the Stop session owns no transitionable
+// registry feature ("a session owning no transitionable feature has nothing
+// to gate"). br143 then made evaluateSessionGate fail-closed - unowned rows
+// are a permanent withhold - so a bare or unowned fixture can never reach
+// the gates under test. Every gate test seeds one session-owned feature
+// (phase 'do': not a PHASE_DOC_DIRS phase, so the stale-evidence gate
+// cannot fire spuriously) and identifies itself via session_id.
+const GATE_SESSION = 'br040-gate-session-id';
+
+function seedOwnedGateFixture(name = 'gate-fixture') {
+  const { savePdcaStatus } = require('../../lib/pdca/status-core');
+  savePdcaStatus({
+    version: '2.1.13',
+    features: {
+      [name]: {
+        name,
+        phase: 'do',
+        ownerSession: GATE_SESSION,
+        ownerSince: new Date().toISOString(),
+      },
+    },
+    activeFeatures: [name],
+    primaryFeature: name,
+    history: [],
+  });
+}
+
 function statusDir() {
   return path.dirname(getPdcaStatusPath());
 }
@@ -49,17 +77,19 @@ afterAll(() => {
 
 describe('br040: pause-flag gate (a)', () => {
   test('pause marker present -> skip with gate pause-flag', () => {
+    seedOwnedGateFixture();
     fs.mkdirSync(statusDir(), { recursive: true });
     fs.writeFileSync(pauseFlagPath(), '');
 
-    const r = skillStopGate({});
+    const r = skillStopGate({ session_id: GATE_SESSION });
 
     expect(r.skip).toBe(true);
     expect(r.gate).toBe('pause-flag');
   });
 
   test('no pause marker -> gate falls through', () => {
-    const r = skillStopGate({});
+    seedOwnedGateFixture();
+    const r = skillStopGate({ session_id: GATE_SESSION });
     expect(r.skip).toBe(false);
     expect(r.gate).toBeNull();
   });
@@ -67,13 +97,15 @@ describe('br040: pause-flag gate (a)', () => {
 
 describe('br040: background-work gate (b)', () => {
   test('in-flight background tasks -> skip with gate background-work', () => {
-    const r = skillStopGate({ background_tasks: [{ id: 't1' }] });
+    seedOwnedGateFixture();
+    const r = skillStopGate({ session_id: GATE_SESSION, background_tasks: [{ id: 't1' }] });
     expect(r.skip).toBe(true);
     expect(r.gate).toBe('background-work');
   });
 
   test('empty background_tasks -> no skip', () => {
-    const r = skillStopGate({ background_tasks: [] });
+    seedOwnedGateFixture();
+    const r = skillStopGate({ session_id: GATE_SESSION, background_tasks: [] });
     expect(r.skip).toBe(false);
   });
 });
@@ -86,7 +118,8 @@ describe('br040: specialist-agent gate (c)', () => {
     'report-generator',
     'pm-lead',
   ])('active agent %s -> skip with gate specialist-agent', (agent) => {
-    const r = skillStopGate({ agent_name: agent });
+    seedOwnedGateFixture();
+    const r = skillStopGate({ session_id: GATE_SESSION, agent_name: agent });
     expect(r.skip).toBe(true);
     expect(r.gate).toBe('specialist-agent');
   });
@@ -96,12 +129,14 @@ describe('br040: specialist-agent gate (c)', () => {
     'frontend-developer',
     null,
   ])('non-specialist agent %s -> no skip', (agent) => {
-    const r = skillStopGate({ agent_name: agent });
+    seedOwnedGateFixture();
+    const r = skillStopGate({ session_id: GATE_SESSION, agent_name: agent });
     expect(r.skip).toBe(false);
   });
 
   test('subagent_type in tool_input is also matched', () => {
-    const r = skillStopGate({ tool_input: { subagent_type: 'bkit:gap-detector' } });
+    seedOwnedGateFixture();
+    const r = skillStopGate({ session_id: GATE_SESSION, tool_input: { subagent_type: 'bkit:gap-detector' } });
     expect(r.skip).toBe(true);
     expect(r.gate).toBe('specialist-agent');
   });
@@ -121,10 +156,12 @@ describe('br040: unified-stop.js pause-flag path (shared state resolution)', () 
 
 describe('br040: gate precedence', () => {
   test('pause flag wins over background work and specialist agent', () => {
+    seedOwnedGateFixture();
     fs.mkdirSync(statusDir(), { recursive: true });
     fs.writeFileSync(pauseFlagPath(), '');
 
     const r = skillStopGate({
+      session_id: GATE_SESSION,
       background_tasks: [{ id: 't1' }],
       agent_name: 'bkit:gap-detector',
     });
@@ -133,7 +170,9 @@ describe('br040: gate precedence', () => {
   });
 
   test('background work wins over specialist agent', () => {
+    seedOwnedGateFixture();
     const r = skillStopGate({
+      session_id: GATE_SESSION,
       background_tasks: [{ id: 't1' }],
       agent_name: 'bkit:pdca-iterator',
     });

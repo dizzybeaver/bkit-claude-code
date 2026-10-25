@@ -54,12 +54,19 @@ function readStatus() {
   return JSON.parse(fs.readFileSync(statusPath(), 'utf8'));
 }
 
+// br138 gate (0) + br143 fail-closed evaluateSessionGate: verdict calls only
+// reach the gates under test when the calling session owns a registry
+// feature, so fixture rows carry an ownerSession the tests then identify as.
+const GATE_SESSION = 'br040-followup-session-id';
+
 function writeRegistryFixture(activeFeatures, primaryFeature) {
   const features = {};
   for (const name of activeFeatures) {
     features[name] = {
       name,
       phase: 'plan',
+      ownerSession: GATE_SESSION,
+      ownerSince: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -188,7 +195,7 @@ describe('Module B: pause/resume verbs', () => {
 
     // shouldSkipAutoTransition is exported by the bare-require guard.
     const { shouldSkipAutoTransition } = require('../../scripts/pdca-skill-stop');
-    const verdict = shouldSkipAutoTransition({});
+    const verdict = shouldSkipAutoTransition({ session_id: GATE_SESSION });
 
     expect(verdict).toEqual({ skip: true, gate: 'pause-flag' });
   });
@@ -205,7 +212,7 @@ describe('Module A: stale-evidence gate', () => {
   test('empty current-phase doc set yields skip gate stale-evidence', () => {
     writeRegistryFixture(['nosuch-docs-feature']);
 
-    const verdict = shouldSkipAutoTransition({});
+    const verdict = shouldSkipAutoTransition({ session_id: GATE_SESSION });
 
     expect(verdict).toEqual({ skip: true, gate: 'stale-evidence' });
   });
@@ -217,7 +224,7 @@ describe('Module A: stale-evidence gate', () => {
     fs.mkdirSync(planDir, { recursive: true });
     fs.writeFileSync(path.join(planDir, 'doc-feature.plan.en.md'), '# plan\n');
 
-    const verdict = shouldSkipAutoTransition({});
+    const verdict = shouldSkipAutoTransition({ session_id: GATE_SESSION });
 
     expect(verdict).toEqual({ skip: false, gate: null });
   });
@@ -225,7 +232,7 @@ describe('Module A: stale-evidence gate', () => {
   test('unknown feature name (no registry row) yields no skip', () => {
     writeRegistryFixture([]);
 
-    const verdict = shouldSkipAutoTransition({});
+    const verdict = shouldSkipAutoTransition({ session_id: GATE_SESSION });
 
     expect(verdict).toEqual({ skip: false, gate: null });
   });
