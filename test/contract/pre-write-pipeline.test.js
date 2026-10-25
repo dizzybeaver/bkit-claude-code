@@ -110,45 +110,88 @@ test('pdcaGuidance none level = empty', () => {
   );
   assert.strictEqual(parts.length, 0);
 });
-test('pdcaGuidance light level = 1 message', () => {
+// br161: pdcaGuidance tests updated to the br146 contract — sizeClassifier
+// guidance is default-silent; message assertions run with the advisory
+// explicitly enabled via a /tmp config root (fresh module load, no live .bkit).
+const nodePath = require('node:path');
+const nodeFs = require('node:fs');
+const nodeOs = require('node:os');
+function guidancePipelineWith(enable) {
+  const root = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'pw-contract-'));
+  if (enable) {
+    nodeFs.writeFileSync(nodePath.join(root, 'bkit.config.json'),
+      JSON.stringify({ hooks: { advisory: { sizeClassifier: true } } }));
+  }
+  nodeFs.mkdirSync(nodePath.join(root, '.bkit', 'state'), { recursive: true });
+  const prev = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = root;
+  for (const k of Object.keys(require.cache)) {
+    if (k.includes('/scripts/pre-write') || k.includes('/lib/core/')) delete require.cache[k];
+  }
+  return { pipeline: require('../../scripts/pre-write'), restore() { process.env.CLAUDE_PROJECT_DIR = prev; } };
+}
+test('pdcaGuidance default config = silent (br146 contract)', () => {
   const parts = pipeline.runPdcaGuidance(
     { filePath: 'x.js' },
     { feature: '', designDoc: '', planDoc: '' },
     { pdcaLevel: 'light', lineCount: 50 }
   );
-  assert.ok(parts[0].includes('Minor change'));
+  assert.strictEqual(parts.length, 0);
+});
+test('pdcaGuidance light level = 1 message', () => {
+  const h = guidancePipelineWith(true);
+  try {
+    const parts = h.pipeline.runPdcaGuidance(
+      { filePath: 'x.js' },
+      { feature: '', designDoc: '', planDoc: '' },
+      { pdcaLevel: 'light', lineCount: 50 }
+    );
+    assert.ok(parts[0].includes('Minor change'));
+  } finally { h.restore(); }
 });
 test('pdcaGuidance recommended with design doc', () => {
-  const parts = pipeline.runPdcaGuidance(
-    { filePath: 'x.js' },
-    { feature: 'auth', designDoc: 'docs/02-design/features/auth.design.md', planDoc: '' },
-    { pdcaLevel: 'recommended', lineCount: 100 }
-  );
-  assert.ok(parts[0].includes('Design doc exists'));
+  const h = guidancePipelineWith(true);
+  try {
+    const parts = h.pipeline.runPdcaGuidance(
+      { filePath: 'x.js' },
+      { feature: 'auth', designDoc: 'docs/02-design/features/auth.design.md', planDoc: '' },
+      { pdcaLevel: 'recommended', lineCount: 100 }
+    );
+    assert.ok(parts[0].includes('Design doc exists'));
+  } finally { h.restore(); }
 });
 test('pdcaGuidance recommended without design doc', () => {
-  const parts = pipeline.runPdcaGuidance(
-    { filePath: 'x.js' },
-    { feature: 'auth', designDoc: '', planDoc: '' },
-    { pdcaLevel: 'recommended', lineCount: 100 }
-  );
-  assert.ok(parts[0].includes('recommended'));
+  const h = guidancePipelineWith(true);
+  try {
+    const parts = h.pipeline.runPdcaGuidance(
+      { filePath: 'x.js' },
+      { feature: 'auth', designDoc: '', planDoc: '' },
+      { pdcaLevel: 'recommended', lineCount: 100 }
+    );
+    assert.ok(parts[0].includes('recommended'));
+  } finally { h.restore(); }
 });
 test('pdcaGuidance required with design doc', () => {
-  const parts = pipeline.runPdcaGuidance(
-    { filePath: 'x.js' },
-    { feature: 'auth', designDoc: 'auth.md', planDoc: '' },
-    { pdcaLevel: 'required', lineCount: 500 }
-  );
-  assert.ok(parts[0].includes('Major feature'));
+  const h = guidancePipelineWith(true);
+  try {
+    const parts = h.pipeline.runPdcaGuidance(
+      { filePath: 'x.js' },
+      { feature: 'auth', designDoc: 'auth.md', planDoc: '' },
+      { pdcaLevel: 'required', lineCount: 500 }
+    );
+    assert.ok(parts[0].includes('Major feature'));
+  } finally { h.restore(); }
 });
 test('pdcaGuidance plan without design adds note', () => {
-  const parts = pipeline.runPdcaGuidance(
-    { filePath: 'x.js' },
-    { feature: 'auth', designDoc: '', planDoc: 'auth.plan.md' },
-    { pdcaLevel: 'required', lineCount: 500 }
-  );
-  assert.ok(parts.some((p) => p.includes('Plan exists')));
+  const h = guidancePipelineWith(true);
+  try {
+    const parts = h.pipeline.runPdcaGuidance(
+      { filePath: 'x.js' },
+      { feature: 'auth', designDoc: '', planDoc: 'auth.plan.md' },
+      { pdcaLevel: 'required', lineCount: 500 }
+    );
+    assert.ok(parts.some((p) => p.includes('Plan exists')));
+  } finally { h.restore(); }
 });
 
 // ==================== Convention Hints ====================

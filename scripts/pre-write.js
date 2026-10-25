@@ -25,6 +25,7 @@ const { debugLog } = require('../lib/core/debug');
 const { isSourceFile, isCodeFile, isEnvFile, extractFeature } = require('../lib/core/file');
 const { findDesignDoc, findPlanDoc } = require('../lib/pdca/phase');
 const { updatePdcaStatus, getPdcaStatusFull } = require('../lib/pdca/status');
+const { evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
 const { classifyTaskByLines, getPdcaLevel } = require('../lib/task/classification');
 const { generateTaskGuidance } = require('../lib/task/creator');
 
@@ -68,6 +69,13 @@ const PDCA_DOC_PATTERNS = [
   /docs\/05-qa\/.*\.qa-report\.md$/,
   /docs\/00-pm\/.*\.prd\.md$/,
 ];
+
+/*
+ * br153 (FR-02): PDCA phase each doc pattern belongs to, index-parallel to
+ * PDCA_DOC_PATTERNS. The analysis dir is the Check-phase artifact surface
+ * (gap analysis); pm/design/plan/report/qa map 1:1 onto the 9-phase enum.
+ */
+const PDCA_DOC_PHASES = ['plan', 'design', 'check', 'report', 'qa', 'pm'];
 
 // ============================================================
 // Pipeline stages (pure functions — side-effects localized)
@@ -154,11 +162,73 @@ function runPdcaDocCheck(ctx) {
 }
 
 /**
+ * br153 (FR-02): should the PDCA-doc advisory be suppressed because this
+ * write belongs to a live, skill-owned PDCA cycle?
+ *
+ * The advisory fired on EVERY direct Write/Edit under the PDCA doc dirs, including
+ * the writes that ARE the skill's own document-creation instructions
+ * (skills/pdca/SKILL.md directs the agent to create these docs via
+ * Write/Edit — there is no other write surface). Registry skill-fire
+ * evidence is the discriminator.
+ *
+ * Deny-biased by construction: suppression requires ALL of
+ *   1. the path maps to a PDCA phase P (index-parallel PDCA_DOC_PHASES),
+ *   2. a registry row for the bound feature (the doc's own feature when the
+ *      registry knows it, otherwise primaryFeature) whose `phase` IS P —
+ *      a live cycle sitting at the phase this document belongs to,
+ *   3. this process's CLAUDE_CODE_SESSION_ID passes the shared
+ *      session-activity gate as 'owner' (evaluateSessionGate — br143
+ *      fail-closed semantics: missing env var, unowned/legacy row, foreign
+ *      session, or malformed entry all withhold).
+ *
+ * The report's "lastAction/phase evidence" arm collapses into checks 2–3:
+ * a lastAction stamp without session ownership cannot distinguish a live
+ * skill fire from a stale replay, so it never suppresses on its own. Any
+ * doubt — missing row, missing ownerSession, absent env var, phase
+ * mismatch, thrown error — leaves the advisory emitting.
+ *
+ * Design Ref: §2 module-2
+ *
+ * @param {string} filePath - the Write/Edit target path
+ * @returns {boolean} true ONLY when skill-fire evidence justifies silence
+ */
+function isSkillOwnedCycleDocWrite(filePath) {
+  try {
+    const idx = PDCA_DOC_PATTERNS.findIndex((p) => p.test(filePath));
+    if (idx === -1) return false;
+    const phase = PDCA_DOC_PHASES[idx];
+    if (!phase) return false;
+
+    const status = getPdcaStatusFull(true);
+    if (!status || !status.features) return false;
+
+    // Bound feature: the doc's own feature when the registry tracks it,
+    // otherwise the registry's primaryFeature (same pattern as Stage 2).
+    const docMatch = String(filePath).match(/([^/]+)\.(?:plan|design|analysis|report|qa-report|prd)\.md$/);
+    const docFeature = docMatch ? docMatch[1] : null;
+    const feature = docFeature && status.features[docFeature] ? docFeature : status.primaryFeature;
+    const row = feature ? status.features[feature] : null;
+    if (!row) return false;
+
+    if (row.phase !== phase) return false;
+
+    const sessionId = process.env.CLAUDE_CODE_SESSION_ID || null;
+    const verdict = evaluateSessionGate(row, sessionId);
+    return verdict.allowed && verdict.reason === 'owner';
+  } catch (_) {
+    // Deny-biased: any doubt → the advisory still emits.
+    return false;
+  }
+}
+
+/**
  * Stage 2.5: PDCA Skill bypass warning.
  */
 function runPdcaBypassDetection(ctx) {
   if (!PDCA_DOC_PATTERNS.some((p) => p.test(ctx.filePath))) return null;
   if (process.env.CLAUDE_SKILL_NAME) return null; // invoked via skill → OK.
+  // Design Ref: §2 module-2 — skill-owned cycle suppresses the advisory.
+  if (isSkillOwnedCycleDocWrite(ctx.filePath)) return null;
   debugLog('PreToolUse', 'PDCA skill bypass detected', { filePath: ctx.filePath });
   return (
     '[PDCA COMPLIANCE] This file is a PDCA document. ' +
@@ -590,7 +660,9 @@ module.exports = {
   runScopeLimiter,
   runCCRegressionCheck,
   runAuditLog,
+  isSkillOwnedCycleDocWrite,
   PDCA_DOC_PATTERNS,
+  PDCA_DOC_PHASES,
 };
 
 if (require.main === module) main();
