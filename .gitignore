@@ -101,3 +101,7 @@ docs/03-analysis/features/*.analysis.md
 !docs/03-analysis/features/*.analysis.en.md
 !docs/03-analysis/features/*.analysis.ko.md
 bkit-debug.log
+
+# Machine-local symlink created by the dpt-plugins supertool-cli plugin when
+# invoked from this cwd — points into ~/.claude/plugins/cache, never committable.
+/supertool
