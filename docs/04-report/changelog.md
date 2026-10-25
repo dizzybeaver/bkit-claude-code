@@ -2,6 +2,42 @@
 
 All notable changes and reports are documented here.
 
+## [2026-10-25] - br162-subagentstop-analysis-dispatch completion report (100% Match Rate)
+
+### Added
+- Completion report (bilingual pair): `docs/04-report/features/br162-subagentstop-analysis-dispatch.report.{en,ko}.md`
+- SubagentStop → analyzer dispatch bridge in scripts/subagent-stop-handler.js: ANALYZER_TYPES 4-form O(1) gate (:29-32), _extractAnalyzerReport transcript-tail scan (:36-62), dispatchAnalyzerMetrics reusing br159 parse/record surfaces read-only (:105-165)
+- test/unit/subagent-dispatch-br162.test.js — 16 tests (stash red→green; golden byte-compare vs PRE-change output; full-handler child runs record 95/87/0/100 end-to-end)
+
+### Fixed
+- br162: Agent-tool-dispatched gap-detector/code-analyzer completions now record metrics automatically — br159's upstream limitation (95.8% reported, matchRate null) retires; non-analyzer stops byte-identical; metrics-br159 16/16 and jest 153/153 stay green
+
+## [2026-10-25] - br163-semicolon-g019-window completion report (100% Match Rate)
+
+### Added
+- Completion report (bilingual pair): `docs/04-report/features/br163-semicolon-g019-window.report.{en,ko}.md`
+- `isSemicolonSpanningPayloadWrite` predicate + G-019-only arm (destructive-detector.js:1505-1511, wired :1641, exported :1986): `;` inside a quoted interpreter payload no longer defeats broker-state write detection
+- test/unit/detector-br163.test.js — 10 tests (red 3/10 pre-fix, mutation-verified), sandbox-composition and dest-position laundering guards exceeding design minimum
+
+### Fixed
+- br163 (closes boundary filed from br160's resolution addendum): `python3 -c "import shutil; shutil.copy('live', …)"` shape now matches G-019 at critical; br148/br156/br160 suites stay green (jest 153/153)
+
+### Out of scope
+- br102 general Bash-window `;` semantics — deferred as an explicit separate decision
+
+## [2026-10-25] - br047-153-156-hook-policy-fixes completion report (99% Match Rate, loop closing record)
+
+### Added
+- Completion report (bilingual pair): `docs/04-report/features/br047-153-156-hook-policy-fixes.report.{en,ko}.md`
+- Loop context: closes the day-long bug-resolution loop — br149; br150-152+155 (e3185a5, 95.8%); br154 (a05a78c, 100%); br159 (48c7030, 96%); this cycle 99%
+
+### Fixed
+- br047: scanner stale-read closed as cache-drift-fixed (no source change); both-direction regression test
+- br153: pre-write advisory owner-only suppression via session-activity-gate 'owner' (scripts/pre-write.js:195-231)
+- br156: G-019 sanctioned-shape advisory text + dual-condition sandbox downgrade with laundering guards
+- br160 (in-cycle): quoted-payload live-write escape — keep-whole write-call detection, 10/10 mutation-verified
+- br161 (in-cycle): 5 stale pdcaGuidance tests aligned to br146 contract (42/42)
+
 ## [2026-03-23] - Multi-Session Incremental Feature Completion - Context Anchor + Session Guide (98% Match Rate)
 
 ### Added

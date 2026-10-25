@@ -7,6 +7,213 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — br162/br163 (2026-10-25): SubagentStop analyzer dispatch bridge, G-019 semicolon-window closure
+
+Two boundary reports closing the hook-policy loop:
+
+- **br162 — dispatched analyzers never recorded metrics.** New dispatch
+  bridge in `scripts/subagent-stop-handler.js`: `ANALYZER_TYPES` 4-form
+  O(1) gate, `_extractAnalyzerReport` transcript-tail scan, and
+  `dispatchAnalyzerMetrics` reusing the br159 parse/record surfaces
+  read-only. Agent-tool-dispatched gap-detector/code-analyzer
+  completions now record metrics automatically (br159's pinned upstream
+  limitation retires); non-analyzer stops stay byte-identical. Suite
+  `test/unit/subagent-dispatch-br162.test.js` 16/16 (stash red→green,
+  golden byte-compare vs pre-change output, end-to-end child runs).
+- **br163 — `;` defeated the G-019 write window.** New
+  `isSemicolonSpanningPayloadWrite` predicate + G-019-only arm in
+  `lib/control/destructive-detector.js`: a semicolon inside a quoted
+  interpreter payload (`python3 -c "import shutil; shutil.copy(...)"`)
+  no longer defeats broker-state write detection. Suite
+  `test/unit/detector-br163.test.js` 10/10 (red 3/10 pre-fix,
+  mutation-verified; sandbox-composition and dest-position laundering
+  guards exceed the design minimum). General Bash-window `;` semantics
+  (br102) deferred out of scope as a separate decision.
+
+Testing: jest 153/153; metrics-br159 16/16; br148/br156/br160 suites
+green. Cycle docs archived to `docs/archive/2026-10/`.
+
+### Fixed — PDCA hook-policy resolution loop (2026-10-25): br047, br150–br156, br159, br160, br161
+
+Day-long bug-resolution loop closed across five cycles (match rates
+95.8–100%):
+
+- **Registry lifecycle + session isolation (br150/br151/br152/br155).**
+  Doc-lookup error classes, pre-write name validation with slugified
+  paths, skip-and-flag readers, E-TERMINAL-WRITE refusal, phase-matched
+  disposal, creation-only `ownerSession` stamp at the row-creation
+  chokepoint, evidence-gated ownership claim, and gate-routed Stop
+  emitters (two bypasses closed). Extra in-wave work: br157 `(X++)`
+  set-e runner trap fixed (battery EXIT=0 for the first time since
+  2026-10-12); br158 feature-manager suite registry leak sandboxed.
+  jest 153/153, battery 79 modules green, live registry stale rows
+  6 → 0; matchRate 95.8 (gate-passed).
+- **br154 — underscore-token server_error.** One additive condition in
+  `classifyError`'s server-error branch; live probe returns
+  `{category: server_error, severity: medium}`. jest 153/153;
+  matchRate 100.
+- **br159 — dispatched-analyzer metric recording.** New sanctioned
+  `recordAnalysisMetrics` entry (the harness-side gap — SubagentStop
+  never dispatching to analysis handlers — pinned and documented, later
+  closed by br162); fabricated analysis-stop baselines removed
+  (measured values only); registry warning triad converted (terminal
+  dup guard, observable requireDocs-skip return, enforceFeatureLimit).
+  Live dogfood matchRate 91.2 recorded via the entry; 91.2 → 96% PASS.
+- **br047/br153/br156 (99% cycle) + in-cycle br160/br161.** br047
+  scanner stale-read closed as cache-drift-fixed with a
+  both-direction regression test; br153 owner-only pre-write advisory
+  suppression via the session-activity gate (`scripts/pre-write.js`);
+  br156 G-019 sanctioned-shape advisory text + dual-condition sandbox
+  downgrade with laundering guards; br160 quoted-payload live-write
+  escape (keep-whole write-call detection, 10/10 mutation-verified);
+  br161 five stale pdcaGuidance tests aligned to the br146 contract
+  (42/42).
+
+Testing: jest 153/153 across all cycles; cycle docs archived to
+`docs/archive/2026-10/`.
+
+### Fixed — advisory gating expansion + scope-limiter precision (2026-10-23): br145, br146, br147
+
+- **br146/br147 — advisory gating extended to all remaining context
+  injectors.** The br144 `hooks.advisory` config gate (default false =
+  silent, strict true = inject) now covers session-context startup
+  sections, the fork-mode CC advisory (the second emitter of the same
+  advisory br144 gated), and dashboard/cwd/PDCA-status/size/scope
+  advisories across session-start, cwd-changed, notification, and
+  pre-write handlers. Functional emitters remain ungated. Adds the
+  Plugin Cache Sync section to project CLAUDE.md.
+- **br145 — locally-defined variable targets.** `rm -rf "$T"` where the
+  same command assigns `T=$(mktemp -d)` is a narrow, known target —
+  no longer classified as an unresolved broad-delete operand; full
+  command text threaded through severity classification.
+
+### Fixed — Stop-hook session isolation + advisory noise gating (2026-10-18): br138, br139, br143, br144
+
+- **br143 — fail-closed session gate.** Cross-session context
+  poisoning: AUTO-TRANSITION demands were injected into sessions with
+  zero bkit activity because the transition gate failed open. New
+  shared `lib/pdca/session-activity-gate.js` (fail-closed verdict
+  table); legacy/unowned registry entries permanently withheld
+  (operator ruling); gate (e) appended to the unified-stop skip chain.
+  24 contract tests, mutation-verified (re-introduced fail-open goes
+  RED). Battery 5365 TC / 0 FAIL.
+- **br138 — session-scoped stale-evidence gate.** Gate (d) evaluated a
+  global registry candidate set, tripping idle sessions on registry
+  residue. Chain-top passthrough for sessions owning no transitionable
+  feature; candidate set scoped owner-only; two swallowed
+  ReferenceErrors that had silently disabled stale-evidence withholding
+  repaired. 15 tests; compound mutation RED 12/15 → restored GREEN.
+- **br144 — config-gated advisory-only emitters (default silent).**
+  Five advisory-only injectors (classifier envelope, feature-detector
+  misfires, pure-ack receipts, fork-mode advisory) gated behind new
+  `bkit.config.json` `hooks.advisory` flags, all default FALSE —
+  266 blocks / ~190KB of per-turn noise eliminated across 8 sessions
+  and prompt-prefix caching restored (operator-reported cache
+  degradation). Strict `true` restores each injection
+  byte-equivalently. 13/13 contract suite.
+- **br139 — remember-plugin injection cap contract suite.** 33 bash
+  contract checks for the plugin-cache patch capping SessionStart
+  memory injection at 2048B (now.md priority, archive exclusion,
+  per-session content-hash dedup, fail-open on state errors);
+  mutation-verified in both directions. Patch map + re-patch procedure
+  in the archived cycle docs.
+
+Testing: full battery 5368 TC / 5363 PASS / 0 FAIL / 5 SKIP.
+
+### Fixed — stale-evidence candidates, advisory activity gate, checkpoint ids (2026-10-14): br047, br048, br049
+
+- **br047 (round 1) — stale-evidence gate candidate resolution.** The
+  gate resolved its doc-evidence feature from primaryFeature alone,
+  withholding transitions that had full evidence on disk; the candidate
+  set is now every registry feature in a transitionable phase (both
+  stop scripts, parity). Three bare exit paths in pdca-skill-stop.js
+  now emit the v2122 single-JSON allow envelope.
+- **br048 — advisory activity gate.** UserPromptSubmit advisories
+  (agent/skill suggestions, ambiguity scores, template dumps) fired on
+  every prompt; all 9 advisory sites now require a non-terminal feature
+  with a timestamp within the last 6 hours — idle sessions get silence.
+- **br049 — checkpoint id collision.** `createCheckpoint` derived ids
+  as `cp-{Date.now()}`; two checkpoints in the same millisecond
+  collided (CP-003 battery flake). Ids now retry with a `-n` suffix
+  until free; common-case shape unchanged. Suite 20/20.
+- Bookkeeping: pre-renumber duplicates br287/br289 reconciled to
+  completed/ (their fixes already landed and were changelogged as
+  br019/br021 on 2026-10-02).
+
+### Fixed — br046-carry-zero (2026-10-10): G-019 read-exemption + doc-evidence archival
+
+- **br046 — read-exemption at the G-019 seam.** `isStateReadUse` in
+  `lib/control/destructive-detector.js`: cp/mv token-as-source
+  positional check + interpreter read-call-context check; any write
+  form anywhere still denies (G-020 and docTargetExempt untouched).
+  10-vector suite (3 allow / 7 deny).
+- **Historical doc-evidence archival.** New
+  `tools/doc-archive/archive-features.js` (dry-run default,
+  registry-API safety exclusion) archived ~105 historical features /
+  ~218 files across 9 doc-location variants; phantom active features
+  78 → 0. Round-5 in-scope fixes for unmasked fixture dependencies
+  (measure archive-aware finder, hermetic context-importer fixture,
+  bilingual design-count regex).
+
+Testing: SC-1 vectors 10/10; SC-2 phantoms 0; SC-3 battery 24 steps
+green — qa-aggregate 7182 PASS / 0 FAIL / 0 errored.
+
+### Fixed — br045 (2026-10-10): scope-limiter spurious L0 advisories + registry junk cleanup
+
+- **br045 — spurious L0 advisories eliminated.** `tests/**` and root
+  `*.md` added to the moderate tier and DEFAULT_SCOPE (strict tier and
+  deny rules untouched); 10 real-state writer suites sandboxed
+  hermetically; live level restored to 4 via public setLevel. Key
+  discovery: lib/core barrel memoization silently defeats env-swap
+  sandboxes unless the require-cache purge covers the whole subtree.
+- **Registry junk cleanup.** Nine junk rows removed through sanctioned
+  `lib/pdca` APIs only (orphan paths); the doc-evidence resurrection
+  source deleted (backed up to work/backups/). Zero open BR reports
+  remained after close.
+
+Testing: SC-1 level coherence pre=4/post=4 across the full battery;
+SC-2 tier probes; qa-aggregate 7179 PASS / 0 FAIL / 0 errored, exit 0.
+
+### Fixed — qa-aggregate red set (2026-10-10): 6 assertions, 5 root causes
+
+Stale test contracts aligned with shipped contracts: `@version 2.1.40`
+tags on the io.js split modules, enh-433 stdout marker repointed to
+`lib/core/_io/output.js`, lib module counts 203→207 in guides, mcp-port
+registry contract (19 tools = 13 pdca + 6 analysis), export-compat
+barrel ranges updated for deliberate br051 additive growth (154
+exports), EN-06 flipped to assert br105 semantics.
+
+Testing: 24-step contract-check battery green; qa-aggregate 7174 PASS /
+0 FAIL / 0 errored (exit 0).
+
+### Fixed — audit batch-6 tail + fence-mode vault scanning (2026-10-10): br170, br190–br192, br200
+
+- **Audit tail (br170, br190–br192).** Measure-gate trust fallback
+  'L3'→'L2' aligned with v2.1.19 S1 F1-4; jest.config phantom testMatch
+  and stale ignore patterns pruned; dead
+  `scripts/audit-output-styles.js` deleted (0 callers, guide count
+  65→64); `test/perf/` consolidated into `test/performance/`; the
+  br180-186 docs-drift cluster closed (7 members, main-verified).
+- **br200 — fence-mode vault scanning for the Docs=Code gate.**
+  `extractFencedLines()` + `crossCheck(opts.fenceMode)` (hard error on
+  unbalanced fences; default path byte-identical); authoritative
+  declaration blocks fenced in README, _GRAPH-INDEX, core-mission;
+  vault files merged into the gate's default doc set. Mutation probe
+  (44→45 Skills inside the fence) → gate exit 1 naming the file;
+  restore → 0. Closes the docs-drift exposure that shipped ~140 stale
+  vault refs with green CI. New fence unit suite 10/10, vault contract
+  8/8; unit 1985 TC pass.
+
+### Changed — docs & tooling accuracy (2026-10)
+
+- bkit-system overviews synced with the v2.x lib restructure — removed
+  components (lib/common.js bridge, lib/context/, consolidated phase
+  hook scripts) marked REMOVED rather than presented as live; agent/
+  skill counts corrected (34 memory-frontmatter agents, 44 skills).
+- Studio A7 blockFingerprints QA report filed (PASS).
+- `tools/brfix-wave-probes/sync_plugin_cache.sh` cache auto-detect
+  hardened: one retry on transient miss, directory dump on failure.
+
 ### Fixed — br040-041 follow-up wave (2026-10-10): stale-evidence gate, pause/resume verbs, junk-row cleanup
 
 The three items deferred from the br040–br041 wave, delivered in cycle
