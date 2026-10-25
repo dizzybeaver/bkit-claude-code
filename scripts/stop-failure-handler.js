@@ -93,7 +93,8 @@ function classifyError(type, message) {
     };
   }
 
-  if (msg.includes('500') || msg.includes('server error') || msg.includes('internal')) {
+  // Design Ref: §3 (br154) — CC payloads carry the underscore token verbatim
+  if (msg.includes('500') || msg.includes('server error') || msg.includes('internal') || msg.includes('server_error')) {
     return {
       category: 'server_error',
       severity: 'medium',
