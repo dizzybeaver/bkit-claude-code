@@ -582,6 +582,28 @@ debugLog('Skill:pdca:Stop', 'Context extracted', {
   currentPhase: currentStatus?.activePdca?.phase
 });
 
+// rb005 FR-01: a phase-derived action (no envelope, no text match) with a
+// foreign live ownerSession is not THIS session's cycle. The br039/br155
+// gates only covered the [AUTO-TRANSITION]/[PDCA-COMPLETE] suffixes, so the
+// base ✅ ack still leaked here on the blocking channel (rb005: 8 consecutive
+// foreign blocks). Reuses the shared gate; suppresses everything downstream
+// (guidance, userPrompt, exec-summary, registry write, metrics) in one place.
+if (actionSource === 'phase') {
+  const phaseKey = feature || currentStatus?.primaryFeature;
+  const phaseEntry = phaseKey ? currentStatus?.features?.[phaseKey] : null;
+  const rb005Gate = shouldAutoTransition(phaseEntry, fireSessionId);
+  if (!rb005Gate.allowed) {
+    debugLog('Skill:pdca:Stop', 'phase-derived guidance suppressed by session ownership (rb005 FR-01)', {
+      feature: phaseKey || null, reason: rb005Gate.reason, fireSessionId,
+    });
+    process.stderr.write(
+      `[bkit-pdca] PDCA feature '${phaseKey}' is owned by another session (phase ${phaseEntry?.phase || 'unknown'}) — no action taken\n`
+    );
+    outputStopAllow(); // v2122 contract: every exit path emits one JSON object
+    process.exit(0);
+  }
+}
+
 // Define next step mapping
 const nextStepMap = {
   pm: {
@@ -1003,9 +1025,22 @@ try {
   }
 } catch (_) { /* non-critical — best-effort write, failure is tolerated */ }
 
-if (guidance) {
+// rb005 FR-02: channel discipline — a directive-less ack never blocks. The
+// S6 surface dropped userPrompt (computed but never emitted), so a manual-mode
+// Stop used to force an extra turn for "✅ ... provided." with zero
+// actionable content. Directive-bearing guidance still blocks.
+if (guidance && /\[AUTO-TRANSITION\]|\[PDCA-COMPLETE\]/.test(guidance)) {
   outputStopSurface(guidance);
 } else {
+  if (guidance) {
+    const firstLine = guidance.split('\n')[0];
+    debugLog('Skill:pdca:Stop', 'directive-less ack downgraded to stderr (rb005 FR-02)', {
+      firstLine,
+    });
+    process.stderr.write(
+      `[bkit-pdca] ${firstLine} — informational only, not blocking (rb005 FR-02)\n`
+    );
+  }
   outputStopAllow();
 }
 process.exit(0);

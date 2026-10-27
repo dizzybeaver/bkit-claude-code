@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — rb005 (2026-10-27): cross-session Stop-hook bleed silenced
+
+Two channel-discipline gates in `scripts/pdca-skill-stop.js`:
+
+- **FR-01 — foreign phase-derived acks suppressed.** When a Stop's action
+  was derived from the shared registry phase (`actionSource === 'phase'`,
+  no envelope/text binding) and the feature's live `ownerSession` belongs
+  to a different session, the handler now exits allow after one stderr
+  note — reusing the br143 `evaluateSessionGate` verdict — instead of
+  emitting `✅ Implementation guide has been provided.` on the blocking
+  channel for a cycle it does not own (rb005: 8 consecutive foreign
+  blocks observed 2026-10-26).
+- **FR-02 — pure acks never block.** Guidance carrying no
+  `[AUTO-TRANSITION]` / `[PDCA-COMPLETE]` directive is downgraded to
+  allow + stderr (manual-mode acks forced a spurious extra turn ever
+  since the S6 surface dropped `userPrompt`); directive-bearing guidance
+  still blocks. Owner full-auto behavior is byte-identical.
+
+Probes `tools/brfix-wave-probes/rb005_probes.js` 6/6 (foreign suppressed,
+owner retained, manual downgrade, directive retained, syntax,
+lease-expiry); targeted suites green (session-activity-gate 24/24,
+stop-handler-extraction 28/28, stale-evidence 15/15, v2122 output
+schema, ownership-br155, stop-report-completion); battery
+`test/run-all-tests.sh` exit 0, 0 failed.
+
 ### Fixed — br162/br163 (2026-10-25): SubagentStop analyzer dispatch bridge, G-019 semicolon-window closure
 
 Two boundary reports closing the hook-policy loop:
