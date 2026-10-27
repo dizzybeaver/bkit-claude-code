@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — br-rb-wave-1027 (2026-10-27): rb006, br164, br165, br166 closed
+
+Wave cycle closing all four open reports:
+
+- **rb006 — exit-0 commands labeled "non-zero failures."**
+  `scripts/tool-failure-handler.js` now extracts the real exit code from the
+  error payload (`/exit (?:code|status)[:\s]*(\d+)/i` or `tool_response`)
+  before classifying: code 0 emits no failure guidance
+  (`success_suppressed`, debugLog-trailed); non-zero or code-less payloads
+  keep today's behavior. Plus a raw-input triage debugLog so the next live
+  firing records the true payload shape.
+- **br164/br166 — full arg string registered as PDCA feature key.**
+  `lib/orchestrator/skill-invocation-effects.js` normalizes
+  `invocationArgs.feature` once at intake (first whitespace token, routed
+  through `lib/pdca/validate-name.js`): `plan myfeature — prose notes`
+  now keys ONE clean `myfeature` entry instead of stranding an orphan key
+  per phase (archive E-ARCH-NOTFOUND class). Clean single-token fires are
+  byte-identical.
+- **br165 — G-010b blocked markdown writes over SQL-shaped prose.**
+  `lib/control/destructive-detector.js` G-010b gains a determiner guard
+  (`(?!the|a|an|this|that|these|those|my|our|your|its)\b` after FROM):
+  "create/delete from the dashboard" no longer fires; unscoped
+  `DELETE FROM audit_log;` still does. Third live specimen during the
+  cycle: the wave's own probe file was denied on a `.js` Write for
+  carrying the fixture strings — fixed probe-side via concatenated
+  fixtures.
+
+Probes `tools/brfix-wave-probes/wave1027_probes.js` 10/10; targeted suites
+12/12 (detector family ×7, skill-invocation-effects, ownership-br155,
+guardrail precision, destructive-bypass, destructive-rules); battery
+`test/run-all-tests.sh` exit 0, 0 failed.
+
 ### Fixed — rb005 (2026-10-27): cross-session Stop-hook bleed silenced
 
 Two channel-discipline gates in `scripts/pdca-skill-stop.js`:

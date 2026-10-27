@@ -29,14 +29,40 @@ const toolInput = input.tool_input || input.toolInput || {};
 const errorMsg = input.error || input.errorMessage || '';
 const isInterrupt = input.is_interrupt || false;
 
+// rb006: triage — record the true payload shape on the next live firing so the
+// upstream exit-0 event source can be assigned blame with evidence
+debugLog('ToolFailure', 'raw input (rb006 triage)', {
+  toolName,
+  error: String(errorMsg).slice(0, 500),
+  inputKeys: Object.keys(input || {}),
+  toolResponse: input.tool_response === undefined ? 'absent' : String(JSON.stringify(input.tool_response)).slice(0, 500),
+});
+
 debugLog('ToolFailure', 'Hook started', {
   toolName,
   error: String(errorMsg).substring(0, 200),
   isInterrupt,
 });
 
+// rb006: extract an explicit exit code from the failure payload (error string
+// or tool_response field); returns null when no code is present — the caller
+// then fail-opens to the previous substring-classification behavior
+function extractExitCode(error, toolResponse) {
+  const match = String(error).match(/exit (?:code|status)[:\s]*(\d+)/i);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  if (toolResponse && typeof toolResponse === 'object') {
+    const code = toolResponse.exit !== undefined ? toolResponse.exit : toolResponse.exitCode;
+    if (typeof code === 'number') {
+      return code;
+    }
+  }
+  return null;
+}
+
 // Step 1: Classify failure pattern
-function classifyFailure(tool, error, input) {
+function classifyFailure(tool, error, input, toolResponse) {
   const err = String(error).toLowerCase();
 
   if (err.includes('permission denied') || err.includes('eacces') || err.includes('eperm')) {
@@ -61,6 +87,17 @@ function classifyFailure(tool, error, input) {
       pattern: 'file_not_found',
       severity: 'low',
       recovery: `File not found. Verify the path exists before attempting ${tool}.`,
+    };
+  }
+
+  // rb006: require a genuinely non-zero exit code before classifying
+  // exit_nonzero — substring match alone fired on verified exit-0 commands
+  const exitCode = extractExitCode(error, toolResponse);
+  if (exitCode === 0) {
+    return {
+      pattern: 'success_suppressed',
+      severity: 'low',
+      recovery: '',
     };
   }
 
@@ -95,7 +132,9 @@ function classifyFailure(tool, error, input) {
   };
 }
 
-const classification = classifyFailure(toolName, errorMsg, toolInput);
+// rb006: pass the raw tool_response through so the exit-0 guard can see the code
+const toolResponse = input.tool_response || input.toolResponse || null;
+const classification = classifyFailure(toolName, errorMsg, toolInput, toolResponse);
 
 // Step 2: Record error pattern to PLUGIN_DATA learnings
 try {
@@ -160,6 +199,10 @@ try {
 // Step 4: Output recovery guidance
 if (isInterrupt) {
   debugLog('ToolFailure', 'Skipping guidance (interrupt)');
+  outputEmpty();
+} else if (classification.pattern === 'success_suppressed') {
+  // rb006: verified exit-0 event — no recovery guidance, allow silently
+  debugLog('ToolFailure', 'exit0-suppressed (wave1027 FR-01)', { toolName });
   outputEmpty();
 } else {
   outputAllow(classification.recovery, 'PostToolUseFailure');
