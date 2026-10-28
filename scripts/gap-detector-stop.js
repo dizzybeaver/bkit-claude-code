@@ -38,8 +38,13 @@ function parseMatchRate(text) {
 
 // Fix 4b (BR-002): the agent's own text, not status.primaryFeature, is the
 // authoritative source for which feature this analysis is about.
-const featurePattern = /feature[:\s]+['"]?([a-z0-9][a-z0-9-]*)['"]?/i;
-const analysisPattern = /analyzing\s+['"]?([a-z0-9][a-z0-9-]*)['"]?/i;
+// br167: bkit's own dispatch prompts and reports backtick feature names
+// ("feature `rb005-...`", "/pdca report `rb005-...`"), but the optional-quote
+// class only accepted ' and " — every backticked binding missed, resolution
+// fell through to primaryFeature (a different key) or denied outright, and
+// the measured matchRate never reached the registry.
+const featurePattern = /feature[:\s]+[`'"]?([a-z0-9][a-z0-9-]*)[`'"]?/i;
+const analysisPattern = /analyzing\s+[`'"]?([a-z0-9][a-z0-9-]*)[`'"]?/i;
 
 /**
  * Extract the feature name the gap-detector reported.
@@ -205,9 +210,19 @@ if (feature && fs.existsSync(planDocPath)) {
 // silently no-oped scoped features (sprint features whose docs live outside
 // the conventional paths) and their match rates never reached the registry.
 if (feature) {
+  // br167: never clobber an existing higher registry matchRate with a lower
+  // re-measurement — updatePdcaStatus blind-assigns via Object.assign, so a
+  // weaker re-run used to overwrite a stronger recorded rate. A lower new
+  // rate still writes its analysisDoc/fulfillment, just not the regression.
+  const existingRate = currentStatus?.features?.[feature]?.matchRate;
+  const rateDropped = measured && typeof existingRate === 'number' && matchRate < existingRate;
+  if (rateDropped) {
+    debugLog('Agent:gap-detector:Stop', 'br167: lower re-measurement dropped', {
+      feature, existingRate, newRate: matchRate,
+    });
+  }
   updatePdcaStatus(feature, 'check', {
-    matchRate,
-    measured,
+    ...(rateDropped ? {} : { matchRate, measured }),
     analysisDoc: `docs/03-analysis/${feature}.analysis.md`,
     fulfillment: fulfillmentResult ? {
       score: fulfillmentResult.score,

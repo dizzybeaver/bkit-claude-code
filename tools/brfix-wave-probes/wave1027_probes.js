@@ -226,6 +226,44 @@ function probeT9() {
     `raw=${JSON.stringify(res).slice(0, 200)}`);
 }
 
+// --- br168: G-020 read-only git stand-down --------------------------------
+
+function probeT13() {
+  const { detect } = require(path.join(REPO_ROOT, 'lib/control/destructive-detector.js'));
+  const a = detect('Bash', { command: 'git -C /tmp log --format=%h -5 -- .bkit/state/pdca-status.json' });
+  const b = detect('Bash', { command: 'git check-ignore -v .bkit/state/pdca-status.json; git log --oneline --all --name-only 2>/dev/null | grep -c bkit/state' });
+  const idsOf = (r) => (r && r.rules ? r.rules.map((x) => x.id) : []);
+  const pass = !idsOf(a).includes('G-020') && !idsOf(b).includes('G-020');
+  report('T13-br168-readonly-git-standdown', pass,
+    `a=${JSON.stringify(idsOf(a))} b=${JSON.stringify(idsOf(b))}`);
+}
+
+function probeT14() {
+  const { detect } = require(path.join(REPO_ROOT, 'lib/control/destructive-detector.js'));
+  // write shapes must stay denied (any registry guard rule; T14a historically G-019)
+  const cases = [
+    ['redirect', 'git log --oneline > .bkit/state/pdca-status.json'],
+    ['tee-into-registry', 'git show HEAD:.bkit/state/pdca-status.json | tee .bkit/state/pdca-status.json'],
+    ['cp-into-registry', 'cp /tmp/x .bkit/state/pdca-status.json'],
+  ];
+  let pass = true;
+  const lines = [];
+  for (const [name, cmd] of cases) {
+    const r = detect('Bash', { command: cmd });
+    const ids = idsOfLocal(r);
+    const denied = ids.includes('G-020') || ids.includes('G-019');
+    lines.push(`${name}: ${JSON.stringify(ids)}`);
+    if (!denied) pass = false;
+  }
+  report('T14-br168-write-shapes-still-denied', pass, lines.join('\n'));
+}
+
+function idsOfLocal(r) {
+  if (!r) return [];
+  if (r.rules) return r.rules.map((x) => x.id);
+  return [];
+}
+
 // --- T10: syntax ----------------------------------------------------------
 
 function probeT10() {
@@ -239,11 +277,120 @@ function probeT10() {
   report('T10-syntax', pass, lines.join('\n'));
 }
 
+// --- T12: br167 gap-detector matchRate recording (SubagentStop bridge) ----
+
+const BR167_FEATURE = 't12-gap-feature';
+const BR167_DISTRACTOR = 't12-other-feature';
+
+function seedBr167Registry(fx, featureRate) {
+  const dir = path.join(fx, '.bkit', 'state');
+  fs.mkdirSync(dir, { recursive: true });
+  const features = {};
+  for (const key of [BR167_FEATURE, BR167_DISTRACTOR]) {
+    features[key] = {
+      phase: 'check', phaseNumber: 4,
+      matchRate: featureRate && featureRate[key] !== undefined ? featureRate[key] : null,
+      iterationCount: 0, requirements: [], documents: {},
+      timestamps: { started: '2026-10-27T00:00:00.000Z' },
+    };
+  }
+  const status = {
+    version: 3, features,
+    primaryFeature: BR167_DISTRACTOR, // binding must WIN over this fallback
+    activeFeatures: [BR167_FEATURE, BR167_DISTRACTOR],
+    history: [],
+    session: { lastActivity: '2026-10-27T00:00:00.000Z' },
+    lastUpdated: '2026-10-27T00:00:00.000Z',
+  };
+  fs.writeFileSync(path.join(dir, 'pdca-status.json'), JSON.stringify(status, null, 2));
+}
+
+function writeBr167Transcript(fx, rateLine) {
+  // line 1: the dispatch prompt carries the agent's feature binding
+  // (backticked — the exact shape the pre-br167 extractors missed)
+  const prompt = { type: 'user', message: { role: 'user', content:
+    'You are the gap-detector for PDCA Check phase, feature `' + BR167_FEATURE +
+    '` in repo /tmp. GOAL: compare design vs implementation.' } };
+  const report = { type: 'assistant', message: { role: 'assistant', content: [
+    { type: 'text', text: '## Gap Analysis\n\n' + rateLine +
+      '\n\nNext: `/pdca report ' + BR167_FEATURE + '`' },
+  ] } };
+  const tp = path.join(fx, 'gap-transcript.jsonl');
+  fs.writeFileSync(tp, JSON.stringify(prompt) + '\n' + JSON.stringify(report) + '\n');
+  return tp;
+}
+
+function runBr167Stop(tp, fx) {
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: fx,
+    CLAUDE_PLUGIN_DATA: path.join(fx, 'plugindata'),
+    BKIT_HOOK_DISPATCH_RECORD: '0' };
+  return spawnSync(process.execPath,
+    [path.join(REPO_ROOT, 'scripts', 'subagent-stop-handler.js')], {
+      input: JSON.stringify({ hook_event_name: 'SubagentStop',
+        agent_type: 'bkit:gap-detector', agent_id: 't12-agent',
+        transcript_path: tp, session_id: 't12-session' }),
+      cwd: fx, env, encoding: 'utf8', timeout: 15000,
+    });
+}
+
+function readBr167Rates(fx) {
+  const reg = JSON.parse(fs.readFileSync(
+    path.join(fx, '.bkit', 'state', 'pdca-status.json'), 'utf8'));
+  return {
+    bound: reg.features[BR167_FEATURE].matchRate,
+    other: reg.features[BR167_DISTRACTOR].matchRate,
+    phase: reg.features[BR167_FEATURE].phase,
+  };
+}
+
+function probeT12() {
+  // 12a: rate parsed from the report lands on the PROMPT-BOUND feature key
+  // (99.6% -> parseInt 99), NOT on primaryFeature; phase must stay 'check'.
+  const fx = tmpProj('t12a');
+  let passA = false; let detailA = '';
+  try {
+    seedBr167Registry(fx, null);
+    const tp = writeBr167Transcript(fx, 'Overall Match Rate: 99.6%');
+    const run = runBr167Stop(tp, fx);
+    const rates = readBr167Rates(fx);
+    passA = run.status === 0
+      && rates.bound === 99
+      && rates.other === null
+      && rates.phase === 'check';
+    detailA = 'exit=' + run.status + ' rates=' + JSON.stringify(rates)
+      + (run.stderr ? ' stderr=' + run.stderr.trim().slice(0, 120) : '');
+  } catch (e) {
+    detailA = 'error: ' + e.message;
+  } finally {
+    cleanup(fx);
+  }
+  report('T12a-fr167-rate-records-on-bound-feature', passA, detailA);
+
+  // 12b: a LOWER re-measurement must NOT clobber an existing higher rate.
+  const fx2 = tmpProj('t12b');
+  let passB = false; let detailB = '';
+  try {
+    seedBr167Registry(fx2, { [BR167_FEATURE]: 98 });
+    const tp = writeBr167Transcript(fx2, 'Overall Match Rate: 75%');
+    const run = runBr167Stop(tp, fx2);
+    const rates = readBr167Rates(fx2);
+    passB = run.status === 0 && rates.bound === 98;
+    detailB = 'exit=' + run.status + ' rates=' + JSON.stringify(rates);
+  } catch (e) {
+    detailB = 'error: ' + e.message;
+  } finally {
+    cleanup(fx2);
+  }
+  report('T12b-fr167-no-clobber-higher-rate', passB, detailB);
+}
+
 const PROBES = {
   T1: probeT1, T2: probeT2, T3: probeT3,
   T4: probeT4, T5: probeT5,
   T6: probeT6, T7: probeT7, T8: probeT8, T9: probeT9,
+  T13: probeT13, T14: probeT14,
   T10: probeT10,
+  T12: probeT12,
 };
 const requested = process.argv.slice(2).filter((a) => PROBES[a]);
 const ids = requested.length ? requested : Object.keys(PROBES);

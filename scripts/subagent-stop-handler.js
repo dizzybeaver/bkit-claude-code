@@ -62,6 +62,51 @@ function _extractAnalyzerReport(transcriptPath) {
 }
 
 /**
+ * br167: the dispatched agent's BINDING lives in its transcript's first user
+ * line — the dispatch prompt ("You are the gap-detector for PDCA Check phase,
+ * feature `rb005-...` ...") — not in the final report, which regularly names
+ * the feature only in a next-step footer the extractors can't see. Scan from
+ * the TOP for the first user message and return its text.
+ */
+function _extractDispatchPrompt(transcriptPath) {
+  const fs = require('fs');
+  const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || entry.type !== 'user') continue;
+    const content = entry.message && entry.message.content;
+    let text = '';
+    if (typeof content === 'string') {
+      text = content;
+    } else if (Array.isArray(content)) {
+      text = content
+        .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+        .map((b) => b.text)
+        .join('\n');
+    }
+    if (text) return text;
+  }
+  return null;
+}
+
+/**
+ * br167: a parsed measurement that could NOT be recorded was debugLog-only,
+ * i.e. invisible in production (BKIT_DEBUG off) — the rb005/wave1027 matchRate
+ * black hole surfaced only at archive time. One stderr line per denied record
+ * makes the miss observable without changing the hook's exit behavior.
+ */
+function _warnDeny(reason, agentType) {
+  try {
+    process.stderr.write(
+      `[bkit-subagent-stop] analyzer metric NOT recorded (${reason}): ${agentType}\n`
+    );
+  } catch (_) { /* stderr unavailable — stay silent, exit behavior unchanged */ }
+}
+
+/**
  * br162 bridge: record a dispatched analyzer's measured metrics from its
  * SubagentStop payload. Deny-biased — any failure means NO record.
  *
@@ -86,11 +131,20 @@ function dispatchAnalyzerMetrics(hookContext, agentType) {
       require('./gap-detector-stop');
     const { getPdcaStatusFull } = require('../lib/pdca/status');
     const source = `subagent-stop dispatch ${new Date().toISOString().slice(0, 10)}`;
+    const statusFull = getPdcaStatusFull();
 
-    // Feature: report text first, registry primaryFeature fallback, else deny.
+    // br167: Feature resolution order — report text, then the dispatch
+    // prompt's agent binding (first user line of the same transcript; the
+    // report itself regularly names the feature only where the extractors
+    // can't see it, which is how the rb005 completion recorded nothing),
+    // then registry primaryFeature. Unresolvable → deny (no wrong-key write).
     let feature = extractFeatureFromText(report);
-    if (!feature) feature = getPdcaStatusFull()?.primaryFeature || null;
-    if (!feature) return { dispatched: true, recorded: false, reason: 'no-feature' };
+    if (!feature) feature = extractFeatureFromText(_extractDispatchPrompt(transcriptPath));
+    if (!feature) feature = statusFull?.primaryFeature || null;
+    if (!feature) {
+      _warnDeny('no-feature', agentType);
+      return { dispatched: true, recorded: false, reason: 'no-feature' };
+    }
 
     const isGapDetector = /gap-detector/.test(agentType);
     if (isGapDetector) {
@@ -98,7 +152,17 @@ function dispatchAnalyzerMetrics(hookContext, agentType) {
       if (matchRate === null) {
         return { dispatched: true, recorded: false, reason: 'no-rate' };
       }
+      // br167: never clobber an existing higher registry matchRate —
+      // recordAnalysisMetrics routes to updatePdcaStatus, which blind-assigns,
+      // so a weaker re-measurement used to overwrite a stronger recorded rate.
+      const existingRate = statusFull?.features?.[feature]?.matchRate;
+      if (typeof existingRate === 'number' && matchRate < existingRate) {
+        return { dispatched: true, recorded: false, reason: 'existing-higher-rate' };
+      }
       const r = recordAnalysisMetrics(feature, { matchRate }, source);
+      // br167: a refused record (E-UNKNOWN-FEATURE class) was invisible with
+      // debug logging off — the dead-matchRate black hole this wave closes.
+      if (r.success !== true) _warnDeny(r.reason, `${agentType} feature=${feature}`);
       return { dispatched: true, recorded: r.success === true, reason: r.reason };
     }
 
@@ -114,6 +178,7 @@ function dispatchAnalyzerMetrics(hookContext, agentType) {
       return { dispatched: true, recorded: false, reason: 'no-metrics' };
     }
     const r = recordAnalysisMetrics(feature, metrics, source);
+    if (r.success !== true) _warnDeny(r.reason, `${agentType} feature=${feature}`); // br167
     return { dispatched: true, recorded: r.success === true, reason: r.reason };
   } catch (e) {
     // Defensive: any error → silent skip. The SubagentStop surface must keep

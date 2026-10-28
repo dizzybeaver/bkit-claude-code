@@ -34,10 +34,29 @@ Wave cycle closing all four open reports:
   carrying the fixture strings — fixed probe-side via concatenated
   fixtures.
 
-Probes `tools/brfix-wave-probes/wave1027_probes.js` 10/10; targeted suites
-12/12 (detector family ×7, skill-invocation-effects, ownership-br155,
-guardrail precision, destructive-bypass, destructive-rules); battery
-`test/run-all-tests.sh` exit 0, 0 failed.
+- **br167 — matchRate never recorded on gap-detector completions.**
+  Root cause: the br162 SubagentStop bridge's feature extraction returned
+  null on real reports (backtick-quoted feature names; the report names the
+  feature only in "Next: /pdca report <key>"), so `recordAnalysisMetrics`
+  denied E-UNKNOWN-FEATURE with a debugLog-only invisible deny — zero
+  writes (rb005 archived with matchRate null via the docs gate, masking
+  it). Fix: `scripts/gap-detector-stop.js` backtick-tolerant patterns +
+  no-clobber of an existing higher rate; `scripts/subagent-stop-handler.js`
+  dispatch-prompt binding with resolution order report → dispatch prompt →
+  primaryFeature and a stderr line on denied records.
+- **br168 — G-020 denied read-only git history over registry pathspecs.**
+  `git log -- .bkit/state/pdca-status.json` tripped the registry-write
+  rule. G-020 gains `suppressIf: isReadonlyGitHistory`: read-only git
+  plumbing verbs stand down; any non-devnull redirect or
+  tee/cp/mv/rm/editor verb re-arms the rule — a read may not smuggle a
+  write (write-path targets unaffected).
+
+Probes `tools/brfix-wave-probes/wave1027_probes.js` 14/14 (T12 br167
+rate-recording + no-clobber, T13/T14 br168 both directions); targeted
+suites green (detector family ×7, skill-invocation-effects,
+ownership-br155, guardrail precision, destructive-bypass,
+destructive-rules, br162 dispatch); battery `test/run-all-tests.sh`
+exit 0, 0 failed.
 
 ### Fixed — rb005 (2026-10-27): cross-session Stop-hook bleed silenced
 
