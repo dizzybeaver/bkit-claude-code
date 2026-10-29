@@ -25,6 +25,7 @@ const { readStdinSync, parseHookInput, outputAllow, outputBlockWithContext, outp
 // outside this fix-wave's file scope); import from the readers sub-module until
 // that re-export lands.
 const { readStdinSafe } = require('../lib/core/_io/readers');
+const { normalizeForDenyMatch, matchesDenyPattern } = require('../lib/defense/deny-matching'); // wave-1028 G2: boundary deny matching (rb013)
 const { debugLog } = require('../lib/core/debug');
 const { getActiveSkill, getActiveAgent } = require('../lib/task/context');
 // v2.1.37 (ENH-466): the host's permission mode decides whether an `ask` reaches
@@ -195,6 +196,7 @@ function handlePhase9DeployPre(input) {
   if (!command) return null;
 
   const lowered = command.toLowerCase();
+  const normalized = normalizeForDenyMatch(command); // Plan FR-04 (rb013): continuations/quotes/whitespace collapsed before deny matching
 
   // A previewed destroy is not a destroy.
   if (hasDeployPreviewFlag(lowered)) return null;
@@ -210,7 +212,7 @@ function handlePhase9DeployPre(input) {
   ];
 
   for (const { pattern, reason, action } of patterns) {
-    if (lowered.includes(pattern.toLowerCase())) {
+    if (matchesDenyPattern(normalized, pattern)) { // Plan FR-04 (rb013)
       return {
         action,
         reason: action === 'deny'
