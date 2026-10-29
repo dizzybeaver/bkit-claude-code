@@ -772,8 +772,20 @@ if (!blocked) {
     if (fs.existsSync(cacheFile)) {
       try {
         const payload = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-        const { deserializeMemoryDirectives } = require('../lib/defense');
-        directives = deserializeMemoryDirectives(payload);
+        // Plan FR-02 (rb022/RB5-4): a cache without a valid source binding is
+        // not enforcement truth — void it rather than deny on stale text.
+        // Missing/empty binding block = legacy cache = void (schema per
+        // session-start writer). Every binding entry must match its source.
+        const { isBoundValid } = require('../lib/core/state-binding');
+        const bindings = Array.isArray(payload.binding) ? payload.binding : null;
+        const bound = bindings && bindings.length > 0
+          && bindings.every((b) => isBoundValid(b, b && b.srcPath));
+        if (bound) {
+          const { deserializeMemoryDirectives } = require('../lib/defense');
+          directives = deserializeMemoryDirectives(payload);
+        } else {
+          debugLog('UnifiedBashPre', 'memory-directives cache unbound or stale — voided', {});
+        }
       } catch (e) {
         debugLog('UnifiedBashPre', 'memory-directives cache parse failed', { error: e.message });
       }

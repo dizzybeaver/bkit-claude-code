@@ -166,6 +166,7 @@ async function main() {
     // pre-#132 inline glue for the Skill-tool path.
     const { suggestions } = await runSkillInvocationEffects(skillName, args, {
       source: 'skill-tool',
+      sessionId, // Plan FR-05 (rb015): recording carries the firing session
       dedupeKey: `${sessionId}:${skillName}:${args.action || ''}:${args.feature || ''}`,
     });
 

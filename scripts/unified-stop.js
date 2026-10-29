@@ -106,25 +106,52 @@ function detectActiveSkill(hookContext) {
     return hookContext.tool_input.skill;
   }
 
-  // 3. From session context (stored by skill-post.js)
-  const sessionSkill = getActiveSkill();
-  if (sessionSkill) {
-    return sessionSkill;
-  }
-
-  // 3.5 v2.1.21 (Issue #113): cross-process active-skill marker.
+  // 2.5 (rb014, Plan FR-05): cross-process active-skill marker, gated.
+  // v2.1.21 (Issue #113) wrote this peek as tier 3.5, AFTER the session
+  // context below — but getActiveSkill() itself falls back to the same
+  // marker file, so an unbound marker reached dispatch through tier 3
+  // without ever passing this gate. The gated peek therefore runs FIRST:
+  // a bound marker returns here, an unbound one is consumed (deleted) so
+  // tier 3's own marker fallback finds nothing.
   // skill-post (#3 path) is in-memory only + dropped by CC #57317, and CC omits
   // skill_name (#1) / tool_input (#2) from the Stop payload — so none of the
   // above resolve a /sprint skill in production. The sprint handler writes a
   // file marker that survives across processes; peek it here (no consume — the
   // dispatched handler consumes it after emitting, so re-fire is prevented).
   try {
-    const { readActiveSkill } = require('../lib/core/active-skill-marker');
+    const {
+      readActiveSkill, clearActiveSkill, isSessionBound,
+    } = require('../lib/core/active-skill-marker');
     const marker = readActiveSkill();
     if (marker && marker.skill) {
-      return marker.skill;
+      // Plan FR-05 (rb014): the marker is a plain unprivileged file, so it is
+      // dispatch-grade evidence ONLY when it is bound to THIS Stop's session.
+      // A marker with no sessionId (pre-binding writer or planted forgery) or
+      // a foreign sessionId must not dispatch a skill handler. Deny-biased:
+      // the unbound marker is consumed (deleted) so a forgery cannot linger
+      // and re-arm a later Stop; detection falls through to the lower tiers.
+      const currentSessionId = hookContext.session_id
+        || process.env.CLAUDE_CODE_SESSION_ID
+        || process.env.CLAUDE_SESSION_ID
+        || null;
+      if (!isSessionBound(marker, currentSessionId)) {
+        debugLog('UnifiedStop', 'rb014 unbound/foreign active-skill marker — rejected and consumed', {
+          markerSessionId: marker.sessionId || null,
+          currentSessionId: currentSessionId || null,
+          markerSkill: marker.skill,
+        });
+        clearActiveSkill();
+      } else {
+        return marker.skill;
+      }
     }
   } catch (_e) { /* non-critical */ }
+
+  // 3. From session context (stored by skill-post.js)
+  const sessionSkill = getActiveSkill();
+  if (sessionSkill) {
+    return sessionSkill;
+  }
 
   // 4. From PDCA status (legacy fallback)
   const pdcaStatus = getPdcaStatusFull();
@@ -463,7 +490,33 @@ const pdcaStatus = getPdcaStatusFull();
 // primaryFeature (the phantom-rebind defect behind the ZfeatA design-demand
 // Stop blocks).
 const { isDeadRecordedFeature } = require('../lib/pdca/stop-binding');
-const recordedFeature = pdcaStatus?.session?.lastSkillFeature;
+// Plan FR-05 (rb015): the session bucket is global state written by EVERY
+// session's fire — honor lastSkillFeature only when it was stamped with
+// THIS Stop's session id at fire time (rb005 ownerSession pattern). A
+// missing or foreign stamp fails closed: the recording is skipped (not the
+// dead-record null sentinel, which is completion semantics), so a foreign
+// fire can never rebind this Stop's feature.
+const unifiedStopSessionId = hookContext.session_id
+  || process.env.CLAUDE_CODE_SESSION_ID
+  || process.env.CLAUDE_SESSION_ID
+  || null;
+const recordedFeature = (() => {
+  const rec = pdcaStatus?.session;
+  if (!rec) return undefined;
+  if (typeof rec.lastSkillSessionId !== 'string' || !rec.lastSkillSessionId) {
+    debugLog('UnifiedStop', 'rb015 unstamped session recording — feature binding skipped (fail closed)', {
+      recordingSessionId: null, fireSessionId: unifiedStopSessionId || null,
+    });
+    return undefined;
+  }
+  if (!unifiedStopSessionId || rec.lastSkillSessionId !== unifiedStopSessionId) {
+    debugLog('UnifiedStop', 'rb015 foreign session recording — feature binding skipped (fail closed)', {
+      recordingSessionId: rec.lastSkillSessionId, fireSessionId: unifiedStopSessionId,
+    });
+    return undefined;
+  }
+  return rec.lastSkillFeature;
+})();
 const recordedDead = isDeadRecordedFeature(recordedFeature, pdcaStatus?.features);
 
 /*

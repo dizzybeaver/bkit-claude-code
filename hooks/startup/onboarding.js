@@ -9,6 +9,7 @@ const fs = require('fs');
 const { detectLevel } = require('../../lib/pdca/level');
 const { debugLog } = require('../../lib/core/debug');
 const { getPdcaStatusFull } = require('../../lib/pdca/status');
+const { PDCA_PHASES } = require('../../lib/pdca/phase');
 const { formatAskUserQuestion } = require('../../lib/pdca/automation');
 const { getBkitConfig } = require('../../lib/core/config');
 
@@ -151,12 +152,23 @@ function persistEnvVars() {
   const envFile = process.env.CLAUDE_ENV_FILE;
   if (envFile) {
     const detectedLevel = detectLevel();
-    const detectedPhase = detectPdcaPhase(); // br073: null when no active feature
+    let detectedPhase = detectPdcaPhase(); // br073: null when no active feature
+    // rb030 (wave1028 module-4): the phase string flows into a quoted shell
+    // export; a forged .bkit/state/pdca-status.json phase value is arbitrary
+    // model-writable text. Validate against the same enum lib/pdca/phase.js
+    // owns (PDCA_PHASES keys) — anything outside the enum is omitted, never
+    // interpolated into the env file.
+    if (detectedPhase && !Object.prototype.hasOwnProperty.call(PDCA_PHASES, detectedPhase)) {
+      debugLog('SessionStart', 'onboarding: invalid PDCA phase in state, omitting BKIT_PDCA_PHASE', {
+        phase: detectedPhase,
+      });
+      detectedPhase = null;
+    }
     try {
       fs.appendFileSync(envFile, `export BKIT_LEVEL=${detectedLevel}\n`);
       // br073: only export BKIT_PDCA_PHASE when an active feature phase exists
       if (detectedPhase) {
-        fs.appendFileSync(envFile, `export BKIT_PDCA_PHASE=${detectedPhase}\n`);
+        fs.appendFileSync(envFile, `export BKIT_PDCA_PHASE='${detectedPhase}'\n`);
       }
       fs.appendFileSync(envFile, `export BKIT_PLATFORM=claude\n`);
     } catch (e) {

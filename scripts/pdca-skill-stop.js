@@ -12,6 +12,7 @@
 
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 // br143: shared session-activity gate — single source of truth for both stop paths.
 const { OWNER_LEASE_MS, evaluateSessionGate } = require('../lib/pdca/session-activity-gate');
@@ -114,10 +115,59 @@ function findPdcaEnvelope(lines) {
  * @param {*} input - parsed hook payload
  * @returns {{action: string, feature: string|null}|null}
  */
+// Plan FR-05 (rb012): br043 transcript containment, mirrored from the
+// sibling reader readHookText (lib/core/_io/observability.js): only read
+// transcripts under the CC session projects dir or the project dir. Both
+// sides resolve through fs.realpathSync so a symlink planted inside an
+// allowed dir cannot pass the prefix check while pointing elsewhere; an
+// unresolvable path fails closed. A crafted payload naming an arbitrary
+// readable file must never become a forged pdca envelope.
+function isContainedTranscriptPath(transcriptPath) {
+  let resolved = null;
+  try {
+    resolved = fs.realpathSync.native
+      ? fs.realpathSync.native(transcriptPath)
+      : fs.realpathSync(transcriptPath);
+  } catch (_e) {
+    return false; // nonexistent/unreadable path — do not read it
+  }
+  const allowed = [
+    path.join(os.homedir(), '.claude', 'projects'),
+    process.env.CLAUDE_PROJECT_DIR || process.cwd(),
+  ]
+    .filter(Boolean)
+    .map((dir) => {
+      try {
+        return fs.realpathSync.native
+          ? fs.realpathSync.native(dir)
+          : fs.realpathSync(dir);
+      } catch (_e) {
+        return path.resolve(dir); // dir may not exist yet — plain resolve
+      }
+    });
+  return allowed.some(
+    (dir) => resolved === dir || resolved.startsWith(dir + path.sep)
+  );
+}
+
 function deriveEnvelopeAction(input) {
   try {
     const transcriptPath = input && (input.transcript_path || input.transcriptPath);
     if (!transcriptPath || typeof transcriptPath !== 'string') return null;
+    // Plan FR-05 (rb012): containment gate BEFORE the read — same threat
+    // model br043 documented for readHookText. Fail closed (null), matching
+    // the unreadable-file path below.
+    if (!isContainedTranscriptPath(transcriptPath)) {
+      // Lazy require (not the hook-body debugLog binding): this helper is
+      // also exported via the bare-require path where the hook body — and
+      // its debugLog const — never runs. Logging stays best-effort.
+      try {
+        require('../lib/core/debug').debugLog('Skill:pdca:Stop', 'rb012 transcript_path outside allowed roots — envelope refused (fail closed)', {
+          transcriptPath,
+        });
+      } catch (_logE) { /* best-effort debug logging */ }
+      return null;
+    }
     const text = fs.readFileSync(transcriptPath, 'utf8');
     const lines = text.split('\n');
     return findPdcaEnvelope(lines.slice(-200));
@@ -294,6 +344,23 @@ function resolveOwnershipStamp(envelope, boundFeature, sessionId, now = new Date
   return { ownerSession: sessionId, ownerSince: now.toISOString() };
 }
 
+// rb015 (Plan FR-05): fire-time session recording binding. The global
+// session bucket (session.lastSkillAction/lastSkillFeature) is written by
+// EVERY session's Skill fire with no prior identity, so honoring it without
+// a session check lets any session's fire (or forged status write) rebind
+// every session's Stop. Mirrors the rb005 ownerSession pattern: the
+// recording is honored only when it was stamped with THIS Stop's
+// session_id at fire time (session.lastSkillSessionId). A recording with a
+// missing or foreign stamp fails closed: skipped, never a tier-0 binding.
+function isOwnSessionRecording(currentStatus, sessionId) {
+  const rec = currentStatus && currentStatus.session;
+  if (!rec) return false;
+  return typeof rec.lastSkillSessionId === 'string'
+    && rec.lastSkillSessionId
+    && typeof sessionId === 'string'
+    && rec.lastSkillSessionId === sessionId;
+}
+
 // v2.1.12 Sprint C-2 (#9/#10/#8): bare-require guard — when this script
 // is require()-d instead of executed as a hook entrypoint, export only
 // the pure helpers so no stale stdout (decisions, advisory messages) is
@@ -303,7 +370,8 @@ if (require.main !== module) {
   module.exports = {
     ENVELOPE_ACTIONS, isPdcaSkillName, parsePdcaSkillArgs, findPdcaEnvelope,
     deriveEnvelopeAction, OWNER_LEASE_MS, shouldAutoTransition, hasCheckEvidence,
-    shouldSkipAutoTransition, resolveOwnershipStamp,
+    shouldSkipAutoTransition, resolveOwnershipStamp, isOwnSessionRecording,
+    isContainedTranscriptPath,
   };
 } else {
 
@@ -454,15 +522,42 @@ const envelopeAction = envelope ? envelope.action : null;
  * activeSkill, skipped, and the Stop fell through to the primaryFeature
  * fallback, binding the transition to a foreign feature.
  */
-const recordedAction = (currentStatus
+// Plan FR-05 (rb015): the recording is honored only when it carries THIS
+// Stop's session stamp (isOwnSessionRecording). A missing or foreign
+// lastSkillSessionId means the recording was written by another session's
+// fire (or an unstamped legacy/forger write) — cross-session rebind fails
+// closed: skip the recording, fall through to the per-Stop evidence tiers.
+const recordingOwn = isOwnSessionRecording(currentStatus, fireSessionId);
+const hasSessionRecording = Boolean(currentStatus && currentStatus.session
+  && (currentStatus.session.lastSkillAction || currentStatus.session.lastSkillFeature));
+if (hasSessionRecording && !recordingOwn) {
+  debugLog('Skill:pdca:Stop', 'rb015 foreign/unstamped session recording — tier-0 binding skipped (fail closed)', {
+    recordingSessionId: (currentStatus && currentStatus.session && currentStatus.session.lastSkillSessionId) || null,
+    fireSessionId: fireSessionId || null,
+  });
+}
+const recordedAction = (recordingOwn
+  && currentStatus
   && currentStatus.session
   && typeof currentStatus.session.lastSkillAction === 'string'
   && currentStatus.session.lastSkillAction)
   ? currentStatus.session.lastSkillAction
   : null;
+// resolveStopFeature tier 0 reads the same global recording — hand it a
+// status view with the recording stripped so a foreign stamp can never bind
+// the feature, while tiers 1-3 (doc-path / unique-phase / primary) still run
+// on the real registry state.
+const bindingStatus = recordingOwn ? currentStatus : {
+  ...currentStatus,
+  session: {
+    ...(currentStatus && currentStatus.session ? currentStatus.session : {}),
+    lastSkillFeature: undefined,
+    lastSkillAction: undefined,
+  },
+};
 let feature = resolveStopFeature({
   inputText,
-  currentStatus,
+  currentStatus: bindingStatus,
   activeSkill: envelopeAction
     || (actionMatch ? actionMatch[1].toLowerCase() : null)
     || recordedAction,

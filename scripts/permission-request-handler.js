@@ -15,6 +15,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const { readStdinSync } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
 const { getAutomationLevel } = require('../lib/pdca/automation');
@@ -111,6 +112,37 @@ try {
   autoLevel = getAutomationLevel();
 } catch (e) {
   debugLog('PermissionRequest', 'Failed to get automation level', { error: e.message });
+}
+
+// Plan FR-09 (rb016): .bkit/runtime/control-state.json `currentLevel` is a
+// first-priority authorization source (automation-controller reads it before
+// config/env) in a model-writable directory. This consumer hardens its own
+// gate deny-biased: the file must parse, carry an integer currentLevel in
+// L0-L4, and a sane trustScore/shape — ANY validation failure forces the
+// MOST RESTRICTIVE level ('manual'), never the permissive one. (The write
+// site lives in lib/control/automation-controller.js — outside this wave's
+// scope — so session-scoping of the file is reported back, not fixed here.)
+try {
+  const statePath = path.join(
+    process.env.CLAUDE_PROJECT_DIR || process.cwd(), '.bkit', 'runtime', 'control-state.json'
+  );
+  if (fs.existsSync(statePath)) {
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const level = state ? state.currentLevel : undefined;
+    const valid = Number.isInteger(level) && level >= 0 && level <= 4;
+    if (!valid) {
+      debugLog('PermissionRequest', 'control-state.json failed validation — falling back to manual', {
+        currentLevel: level,
+      });
+      autoLevel = 'manual';
+    }
+  }
+} catch (e) {
+  // Unparseable/tampered control-state: deny-bias to the restrictive default.
+  debugLog('PermissionRequest', 'control-state.json unreadable — falling back to manual', {
+    error: e.message,
+  });
+  autoLevel = 'manual';
 }
 
 const isL2Plus = autoLevel === 'semi-auto' || autoLevel === 'full-auto';

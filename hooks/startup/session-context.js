@@ -107,6 +107,38 @@ function ccVersionLt(a, b) {
  *   source: 'cache' | 'fresh' | 'skipped'
  * }}
  */
+/**
+ * rb041 sanity gate for cached CC versions: a plausible semver triple with
+ * believable component bounds. "9.9.9" — the canonical forged placeholder —
+ * and any non-x.y.z shape fail here and force fresh detection.
+ * @param {string} v
+ * @returns {boolean}
+ */
+function isPlausibleCCVersion(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(v);
+  if (!m) return false;
+  const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (major > 99 || minor > 99 || patch > 999) return false;
+  if (major === 9 && minor === 9 && patch === 9) return false;
+  return true;
+}
+
+/**
+ * rb041: resolve the `claude` binary PATH would run (realpath'd), for cache
+ * binding only. Pure filesystem walk of PATH — never spawns.
+ * @returns {string | null}
+ */
+function resolveClaudeBinaryPath() {
+  const pathDirs = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const dir of pathDirs) {
+    const candidate = path.join(dir, 'claude');
+    try {
+      if (fs.existsSync(candidate)) return fs.realpathSync(candidate);
+    } catch (_) { /* try next dir */ }
+  }
+  return null;
+}
+
 function detectCCVersion() {
   // 1. Opt-out env check
   if (process.env.BKIT_DISABLE_CC_VERSION_DETECTION === '1') {
@@ -126,22 +158,53 @@ function detectCCVersion() {
   // for the full hour and the next session re-cached the same failure, making
   // the advisory permanently dead. Failures now expire in a minute and only a
   // successful detection earns the long TTL.
+  //
+  // Plan FR-09 (rb041): the cache lives in model-writable .bkit/runtime/, so a
+  // forged entry is trivially writable. Two deny-biased guards on the read:
+  //   - Sanity: the cached version must parse as a plausible semver triple —
+  //     "9.9.9" (the canonical forged placeholder) and any non-x.y.z shape are
+  //     invalid and force fresh detection.
+  //   - Source binding: entries written by THIS module carry `bind`
+  //     (sourceBinding of the claude binary — mtime + sha256-8, zero spawns);
+  //     a bind that no longer matches the binary voids the cache. Absence of
+  //     a bind is a legacy entry, still gated by TTL + sanity.
   try {
     if (fs.existsSync(cachePath)) {
       const stat = fs.statSync(cachePath);
       const ageMs = Date.now() - stat.mtimeMs;
       const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
       if (cached && typeof cached === 'object') {
-        const isSuccess = typeof cached.version === 'string' && cached.version.length > 0;
+        const isSuccess = typeof cached.version === 'string'
+          && cached.version.length > 0
+          && isPlausibleCCVersion(cached.version);
+        if (isSuccess && cached.bind) {
+          const { isBoundValid } = require('../../lib/core/state-binding');
+          if (!isBoundValid(cached.bind, cached.bind.srcPath)) {
+            debugLog('SessionStart', 'cc-version cache bind mismatch — refreshing', {
+              bindPath: cached.bind.srcPath,
+            });
+            isSuccess = false;
+          }
+        }
         const ttl = isSuccess ? CC_VERSION_CACHE_TTL_MS : CC_VERSION_FAILURE_CACHE_TTL_MS;
-        if (ageMs < ttl) {
+        if (ageMs < ttl && isSuccess) {
+          return {
+            version: cached.version,
+            isOldVersion: !!cached.isOldVersion,
+            advisory: cached.isOldVersion ? buildCCAdvisoryText(cached.version) : null,
+            source: 'cache',
+          };
+        }
+        if (ageMs < ttl && !isSuccess && cached.version === null) {
           // A cached failure is still honoured, but only for a minute — long
           // enough to stop back-to-back sessions each paying the fallback
           // subprocess timeout, short enough that detection recovers on its own.
+          // (rb041: an absurd version string is NOT a cached failure — it is a
+          // forged entry and falls through to fresh detection above.)
           return {
-            version: isSuccess ? cached.version : null,
-            isOldVersion: isSuccess ? !!cached.isOldVersion : false,
-            advisory: isSuccess && cached.isOldVersion ? buildCCAdvisoryText(cached.version) : null,
+            version: null,
+            isOldVersion: false,
+            advisory: null,
             source: 'cache',
           };
         }
@@ -211,12 +274,22 @@ function detectCCVersion() {
     if (!fs.existsSync(cacheDir)) {
       fs.mkdirSync(cacheDir, { recursive: true });
     }
+    // Plan FR-09 (rb041): bind the cache to the claude binary's identity
+    // (mtime + sha256-8 via sourceBinding — filesystem reads only, no spawn).
+    // The read side voids the cache when the binary changes underneath it.
+    let bind = null;
+    try {
+      const { sourceBinding } = require('../../lib/core/state-binding');
+      const binPath = resolveClaudeBinaryPath();
+      if (binPath) bind = sourceBinding(binPath);
+    } catch (_) { /* binding best-effort; cache stays TTL+sanity guarded */ }
     fs.writeFileSync(cachePath, JSON.stringify({
       version,
       isOldVersion,
       detectedAt: new Date().toISOString(),
       ttlSeconds: CC_VERSION_CACHE_TTL_MS / 1000,
       detectError,
+      bind,
     }, null, 2));
   } catch (_e) {
     // fail-open

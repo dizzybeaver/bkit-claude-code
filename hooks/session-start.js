@@ -510,34 +510,82 @@ try {
 // PreToolUse hooks (Bash) then short-circuit on a deny match. Fail-silent;
 // if extraction fails or no CLAUDE.md exists, enforcement skips and CC's
 // native advisory behavior stands unchanged.
+//
+// Plan FR-02 (rb022 / RB5-4 writer half): the cache is enforcement truth
+// derived from a model-writable source, so each written payload embeds a
+// per-source-file binding {srcPath, srcMtime, srcHash} (lib/core/state-binding).
+// Two-sided validity:
+//   - Source absent or clean (no directive lines) => the cache is DELETED,
+//     never left stale — deletion of CLAUDE.md must void its denies, or the
+//     operator is gaslit into editing a file that no longer exists (RB5-4).
+//   - Source present with directives => cache written WITH the binding.
+// Consumer contract (unified-bash-pre.js, landed by a separate wave step):
+// before honoring any directive, the consumer MUST verify
+// isBoundValid(payloadBindingEntry, srcPath) for EVERY binding entry and
+// treat the whole cache as void if any entry fails or the binding array is
+// missing/empty. Absence of a binding block = legacy cache = void.
 // ============================================================
 try {
   const fs = require('fs');
   const path = require('path');
+  const { sourceBinding } = require('../lib/core/state-binding');
   const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
   const candidates = [
     path.join(root, '.claude', 'CLAUDE.md'),
     path.join(root, 'CLAUDE.md'),
   ];
   let combined = '';
+  const presentSources = [];
   for (const file of candidates) {
     if (fs.existsSync(file)) {
-      try { combined += fs.readFileSync(file, 'utf8') + '\n'; } catch (_) { /* graceful */ }
+      try {
+        combined += fs.readFileSync(file, 'utf8') + '\n';
+        presentSources.push(file);
+      } catch (_) { /* graceful */ }
     }
   }
-  if (combined.length > 0) {
-    const { extractMemoryDirectives, serializeMemoryDirectives } = require('../lib/defense');
-    const directives = extractMemoryDirectives(combined, { source: 'CLAUDE.md' });
-    if (directives.length > 0) {
+  const dir = path.join(root, '.bkit', 'runtime');
+  const file = path.join(dir, 'memory-directives.json');
+  // Plan FR-02: void = delete; the deny-biased inverse of the write path.
+  const voidCache = () => {
+    try {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch (_) { /* deletion best-effort; consumer-side binding check is backstop */ }
+  };
+  const { extractMemoryDirectives, serializeMemoryDirectives } = require('../lib/defense');
+  const directives = combined.length > 0
+    ? extractMemoryDirectives(combined, { source: 'CLAUDE.md' })
+    : [];
+  if (directives.length > 0 && presentSources.length > 0) {
+    // Plan FR-02: bind the fresh cache to the exact source bytes it was
+    // extracted from — per-source mtime + sha256-8 (sourceBinding).
+    const bindings = presentSources
+      .map(sourceBinding)
+      .filter(b => b !== null);
+    if (bindings.length === 0) {
+      // Plan FR-02: unreadable source bytes — refuse to mint unbound
+      // enforcement truth AND void whatever stale cache exists.
+      debugLog('SessionStart', 'Memory Enforcer: source binding unavailable, voiding cache', {});
+      voidCache();
+    } else {
       const payload = serializeMemoryDirectives(directives);
-      const dir = path.join(root, '.bkit', 'runtime');
+      payload.binding = bindings;
+      payload.boundAt = new Date().toISOString();
       fs.mkdirSync(dir, { recursive: true });
-      const file = path.join(dir, 'memory-directives.json');
       const tmp = file + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8');
       fs.renameSync(tmp, file);
-      debugLog('SessionStart', 'Memory Enforcer directives cached', { count: payload.count });
+      debugLog('SessionStart', 'Memory Enforcer directives cached', {
+        count: payload.count, boundSources: bindings.length,
+      });
     }
+  } else {
+    // Plan FR-02 (rb022 second half): no source files, or sources present but
+    // carrying no directive lines — the existing cache is VOID either way.
+    // Deletion is the deny-biased inverse of the write path: stale denies must
+    // never outlive their source.
+    voidCache();
+    debugLog('SessionStart', 'Memory Enforcer directives cache voided (source absent or clean)', {});
   }
 } catch (_) { /* directive extraction unavailable — CC advisory behavior stands */ }
 
