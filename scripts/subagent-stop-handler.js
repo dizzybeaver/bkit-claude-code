@@ -35,10 +35,42 @@ const ANALYZER_TYPES = new Set([
 // of these is not a measurement report and is skipped.
 const ANALYZER_REPORT_MARKER = /Overall Match Rate|codeQualityScore/;
 
+// rb024: a full-transcript readFileSync + split('\n') inside a 5s hook
+// silently killed the handler on the CC timeout when a subagent transcript
+// grew large (dead-hook class — no partial output, no error surface). Cap
+// every transcript read at ~2MB: head cap for the dispatch prompt (the
+// binding first-user line lives at the top), tail cap for the report
+// (measurement lines live at the end). The line at the cut edge is
+// possibly partial and is dropped.
+const TRANSCRIPT_CAP_BYTES = 2 * 1024 * 1024;
+
+function _readTranscriptLines(transcriptPath, fromTail) {
+  const fs = require('fs');
+  let fd = null;
+  try {
+    const size = fs.statSync(transcriptPath).size;
+    const cap = Math.min(size, TRANSCRIPT_CAP_BYTES);
+    const buf = Buffer.alloc(cap);
+    fd = fs.openSync(transcriptPath, 'r');
+    fs.readSync(fd, buf, 0, cap, fromTail ? size - cap : 0);
+    const lines = buf.toString('utf8').split('\n');
+    if (size > TRANSCRIPT_CAP_BYTES) {
+      if (fromTail) lines.shift();
+      else lines.pop();
+    }
+    return lines;
+  } catch (_) {
+    return [];
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch (_) { /* already closed */ }
+    }
+  }
+}
+
 /** Scan the last ~50 JSONL lines for the last assistant message carrying a metric marker. */
 function _extractAnalyzerReport(transcriptPath) {
-  const fs = require('fs');
-  const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+  const lines = _readTranscriptLines(transcriptPath, true);
   const start = Math.max(0, lines.length - 51);
   for (let i = lines.length - 1; i >= start; i--) {
     const line = lines[i];
@@ -69,8 +101,7 @@ function _extractAnalyzerReport(transcriptPath) {
  * the TOP for the first user message and return its text.
  */
 function _extractDispatchPrompt(transcriptPath) {
-  const fs = require('fs');
-  const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+  const lines = _readTranscriptLines(transcriptPath, false);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!line) continue;
@@ -140,10 +171,13 @@ function dispatchAnalyzerMetrics(hookContext, agentType) {
     // then registry primaryFeature. Unresolvable → deny (no wrong-key write).
     let feature = extractFeatureFromText(report);
     if (!feature) feature = extractFeatureFromText(_extractDispatchPrompt(transcriptPath));
-    if (!feature) feature = statusFull?.primaryFeature || null;
+    // rb024: the primaryFeature fallback is REMOVED. An unresolved feature
+    // must never land a matchRate on the wrong registry key — deny and
+    // record 'unresolved-feature' (the deny-bias the surrounding comment
+    // already claimed but the code contradicted).
     if (!feature) {
-      _warnDeny('no-feature', agentType);
-      return { dispatched: true, recorded: false, reason: 'no-feature' };
+      _warnDeny('unresolved-feature', agentType);
+      return { dispatched: true, recorded: false, reason: 'unresolved-feature' };
     }
 
     const isGapDetector = /gap-detector/.test(agentType);
@@ -170,8 +204,18 @@ function dispatchAnalyzerMetrics(hookContext, agentType) {
     const metrics = {};
     const q = report.match(/(Quality|quality)\s*(Score|score|점수)[^0-9]*(\d+)/);
     if (q) metrics.codeQualityScore = parseInt(q[3], 10);
-    const c = report.match(/(criticalIssueCount|Critical|critical|심각|重大)[^0-9]*(\d+)/i);
-    if (c) metrics.criticalIssueCount = parseInt(c[c.length - 1], 10);
+    // rb024: 'critical' count needs a word boundary (CJK alternatives
+    // excepted) and a plausible range — any adjacent number used to be
+    // parsed as the issue count (metric integrity).
+    const c = report.match(
+      /(?:\b(?:criticalIssueCount|critical(?:\s+issues?)?)\b|심각|重大)[^0-9]{0,40}(\d{1,4})\b/i
+    );
+    if (c) {
+      const criticalCount = parseInt(c[1], 10);
+      if (criticalCount >= 0 && criticalCount <= 999) {
+        metrics.criticalIssueCount = criticalCount;
+      }
+    }
     const a = report.match(/(API|api)\s*(Compliance|compliance)[^0-9]*(\d+)/i);
     if (a) metrics.apiComplianceRate = parseInt(a[a.length - 1], 10);
     if (Object.keys(metrics).length === 0) {
@@ -265,10 +309,11 @@ function main() {
     debugLog('SubagentStop', 'analyzer dispatch', analyzerDispatch);
   }
 
-  // Determine exit status (transcript_path exists = normal exit)
-  const isSuccess = hookContext.transcript_path != null
-    || hookContext.exit_code === 0
-    || hookContext.exit_code === undefined;
+  // rb024: success requires an EXPLICIT exit_code === 0. transcript_path
+  // presence and an undefined exit_code both used to count as success,
+  // which hid failed subagents from teammate status (failure visibility
+  // lost — rb006 misclassification class).
+  const isSuccess = hookContext.exit_code === 0;
   const status = isSuccess ? 'completed' : 'failed';
 
   // Update status
@@ -348,8 +393,17 @@ function main() {
      * the identical suggestion six times across six stop→re-prompt cycles.
      * The orchestrator, which CAN fire skills, still sees the hint once per
      * subagent stop via systemMessage.
+     *
+     * rb024: the per-stop ack is now br144-gated (hooks.advisory.ackMessages,
+     * default false = silent) — one "Subagent X stopped" line on EVERY
+     * SubagentStop was advisory spam. With advisories off, the hint (if any)
+     * degrades to debugLog so it is never fully lost.
      */
-    systemMessage: `Subagent ${agentName} stopped (${status})${nextActionHint ? '\n' + nextActionHint : ''}`,
+    ...(isAdvisoryEnabled('ackMessages')
+      ? {
+        systemMessage: `Subagent ${agentName} stopped (${status})${nextActionHint ? '\n' + nextActionHint : ''}`,
+      }
+      : {}),
     hookSpecificOutput: {
       hookEventName: "SubagentStop",
       agentId,
@@ -358,6 +412,13 @@ function main() {
       status,
     }
   };
+
+  if (!response.systemMessage && nextActionHint) {
+    debugLog('SubagentStop', 'next-action hint suppressed from systemMessage (advisories off, rb024)', {
+      agentName,
+      hint: nextActionHint,
+    });
+  }
 
   console.log(JSON.stringify(response));
   process.exit(0);

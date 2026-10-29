@@ -683,17 +683,34 @@ debugLog('Skill:pdca:Stop', 'Context extracted', {
 // base ✅ ack still leaked here on the blocking channel (rb005: 8 consecutive
 // foreign blocks). Reuses the shared gate; suppresses everything downstream
 // (guidance, userPrompt, exec-summary, registry write, metrics) in one place.
-if (actionSource === 'phase') {
+//
+// rb011 (Plan FR-11): the gate previously ran ONLY on the 'phase' tier —
+// envelope- and text-derived actions bypassed it and fell through to the
+// unconditional updatePdcaStatus write, so a Stop whose payload prose merely
+// contained "pdca do <feature>" (text tier) or a stale transcript envelope
+// (envelope tier) could advance/rewind a foreign live-lease feature. One
+// gate above tier selection for EVERY action-mutating tier: the phase
+// write, not just the guidance suffix, must be owned by the firing session.
+// Fail-closed skip + stderr note on mismatch. 'none' = no action at all —
+// nothing downstream mutates, so no gate (and no spurious stderr note).
+if (actionSource !== 'none') {
   const phaseKey = feature || currentStatus?.primaryFeature;
   const phaseEntry = phaseKey ? currentStatus?.features?.[phaseKey] : null;
   const rb005Gate = shouldAutoTransition(phaseEntry, fireSessionId);
   if (!rb005Gate.allowed) {
-    debugLog('Skill:pdca:Stop', 'phase-derived guidance suppressed by session ownership (rb005 FR-01)', {
+    debugLog('Skill:pdca:Stop', 'phase-derived guidance suppressed by session ownership (rb005 FR-01, rb011 all tiers)', {
       feature: phaseKey || null, reason: rb005Gate.reason, fireSessionId,
     });
-    process.stderr.write(
-      `[bkit-pdca] PDCA feature '${phaseKey}' is owned by another session (phase ${phaseEntry?.phase || 'unknown'}) — no action taken\n`
-    );
+    // rb011: synchronous write — process.stderr.write into a PIPE is
+    // buffered and process.exit(0) on the next line discards it, which made
+    // the ownership refusal invisible to exactly the harness plumbing that
+    // relays hook stderr. fs.writeSync(2, ...) cannot be dropped by exit.
+    try {
+      fs.writeSync(
+        2,
+        `[bkit-pdca] PDCA feature '${phaseKey}' is owned by another session (phase ${phaseEntry?.phase || 'unknown'}) — no action taken\n`
+      );
+    } catch (_) { /* EPIPE etc. — refusal already recorded via debugLog */ }
     outputStopAllow(); // v2122 contract: every exit path emits one JSON object
     process.exit(0);
   }

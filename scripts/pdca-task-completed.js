@@ -23,7 +23,7 @@ if (require.main !== module) { module.exports = {}; return; }
 const { readStdinSync, outputAllow } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
 const { getPdcaStatusFull } = require('../lib/pdca/status');
-const { autoAdvancePdcaPhase, shouldAutoAdvance, getAutomationLevel, formatAskUserQuestion, buildNextActionQuestion, detectPdcaFromTaskSubject } = require('../lib/pdca/automation');
+const { autoAdvancePdcaPhase, shouldAutoAdvance, getAutomationLevel, detectPdcaFromTaskSubject } = require('../lib/pdca/automation');
 
 function main() {
   debugLog('TaskCompleted', 'Hook started');
@@ -69,7 +69,12 @@ function main() {
     const featureData = pdcaStatus?.features?.[featureName];
     const matchRate = featureData?.matchRate;
 
-    const result = autoAdvancePdcaPhase(featureName, detectedPhase, { matchRate });
+    const result = autoAdvancePdcaPhase(featureName, detectedPhase, {
+      matchRate,
+      // rb023: the firing session's id — autoAdvancePdcaPhase refuses to
+      // advance a registry row whose ownerSession is a DIFFERENT session.
+      sessionId: typeof hookContext.session_id === 'string' ? hookContext.session_id : null,
+    });
 
     if (result) {
       const nextPhase = result.phase;
@@ -101,8 +106,18 @@ function main() {
       }
 
       if (teamModule && teamModule.isTeamModeAvailable()) {
-        const level = pdcaStatus?.features?.[featureName]?.level || 'Dynamic';
-        const assignment = teamModule.assignNextTeammateWork(detectedPhase, featureName, level);
+        // rb023: a fabricated 'Dynamic' default misroutes team assignment
+        // when the feature never recorded a level. Skip assignment entirely
+        // when level is absent instead of inventing one.
+        const level = pdcaStatus?.features?.[featureName]?.level || null;
+        const assignment = level
+          ? teamModule.assignNextTeammateWork(detectedPhase, featureName, level)
+          : null;
+        if (!level) {
+          debugLog('TaskCompleted', 'team assignment skipped: feature has no recorded level (rb023)', {
+            feature: featureName,
+          });
+        }
         if (assignment) {
           debugLog('TaskCompleted', 'Team assignment generated', {
             nextPhase: assignment.nextPhase,
@@ -145,21 +160,17 @@ function main() {
 
   // v1.5.9: Executive Summary + Next Action for manual mode (plan/report completion)
   if (detectedPhase === 'plan' || detectedPhase === 'report') {
-    const featureStatus = getPdcaStatusFull()?.features?.[featureName] || {};
-    const questionPayload = buildNextActionQuestion(detectedPhase, featureName, {
-      // v2.1.34: showing a fabricated 0% to the user is worse than showing
-      // nothing — it looks like a measurement that failed.
-      matchRate: require('../lib/quality/match-rate').isMeasured(featureStatus.matchRate)
-        ? featureStatus.matchRate
-        : null,
-      iterCount: featureStatus.iterationCount || 0
-    });
-    const formatted = formatAskUserQuestion(questionPayload);
-
-    // v1.5.9: P2-FR-07 Executive Summary + AskUserQuestion sequential output
-    const { generateExecutiveSummary, formatExecutiveSummary } = require('../lib/pdca/executive-summary');
-    const summary = generateExecutiveSummary(featureName, detectedPhase);
-    const summaryText = formatExecutiveSummary(summary, 'full');
+    // rb023: the executive-summary require is module-load work that used to
+    // run bare — a require-time throw crashed the whole hook on plan/report
+    // completion. Degrade to no summary instead.
+    let summaryText = '';
+    try {
+      const { generateExecutiveSummary, formatExecutiveSummary } = require('../lib/pdca/executive-summary');
+      const summary = generateExecutiveSummary(featureName, detectedPhase);
+      summaryText = formatExecutiveSummary(summary, 'full');
+    } catch (e) {
+      debugLog('TaskCompleted', 'executive summary unavailable (rb023)', { error: e.message });
+    }
 
     const manualResponse = {
       systemMessage: [
@@ -172,8 +183,9 @@ function main() {
         `---`,
         '',
         `**Please select next step.**`
-      ].join('\n'),
-      userPrompt: JSON.stringify(formatted)
+      ].join('\n')
+      // rb023: `userPrompt` dropped — not a TaskCompleted schema field
+      // (inert payload weight; same class as rb034 F4).
     };
     console.log(JSON.stringify(manualResponse));
     process.exit(0);
