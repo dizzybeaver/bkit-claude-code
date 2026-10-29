@@ -324,7 +324,9 @@ function executeHandler(handlerPath, context) {
     const { spawnSync } = require('child_process');
     const result = spawnSync(process.execPath, [fullPath], {
       input: JSON.stringify(context || {}),
-      timeout: 8000,
+      // P1-F1: 3s per child inside the registered 10s Stop budget — one slow
+      // handler must not eat 80% of the wall clock.
+      timeout: 3000,
     });
     if (result.status === 0) {
       if (result.stdout && result.stdout.length) {
@@ -363,11 +365,25 @@ debugLog('UnifiedStop', 'Hook started');
 
 // Read hook context (bounded — see Issue #139 note above)
 let hookContext = {};
+let contextDegraded = false;
 try {
   const input = await readStdinBounded(STDIN_READ_TIMEOUT_MS);
-  hookContext = (input && typeof input === 'object') ? input : {};
+  // Only a plain object is an acceptable context — arrays or any other
+  // shape are degraded input (rb020/P1-F2)
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    hookContext = input;
+  } else {
+    contextDegraded = true;
+  }
 } catch (e) {
   debugLog('UnifiedStop', 'Failed to parse context', { error: e.message });
+  contextDegraded = true;
+}
+
+// Plan FR-01: degraded context refuses gate+ledger writes (rb020)
+if (contextDegraded) {
+  debugLog('UnifiedStop', 'rb020 degraded context — refusing gate+ledger writes, fail-silent exit');
+  process.exit(0);
 }
 
 // br290b: honor the harness Stop-loop breaker (stop_hook_active=true on the
@@ -403,28 +419,6 @@ debugLog('UnifiedStop', 'Detection result', {
   activeSkill,
   activeAgent
 });
-
-// Execute appropriate handler
-let handled = false;
-
-// Priority: Agent handlers first (more specific)
-if (activeAgent && AGENT_HANDLERS[activeAgent]) {
-  debugLog('UnifiedStop', 'Executing agent handler', { agent: activeAgent });
-  handled = executeHandler(AGENT_HANDLERS[activeAgent], hookContext);
-}
-
-// Then skill handlers
-if (!handled && activeSkill && SKILL_HANDLERS[activeSkill]) {
-  debugLog('UnifiedStop', 'Executing skill handler', { skill: activeSkill });
-
-  // Special case: development-pipeline uses simple echo
-  if (activeSkill === 'development-pipeline') {
-    console.log(JSON.stringify({ continue: false }));
-    handled = true;
-  } else {
-    handled = executeHandler(SKILL_HANDLERS[activeSkill], hookContext);
-  }
-}
 
 // ============================================================
 // v2.0.0 Module Integrations
@@ -536,6 +530,37 @@ if (autoTransitionGate.skip) {
   process.exit(0);
 }
 
+// Plan FR-05: gates before dispatch (rb020). Handler dispatch (the
+// active-skill marker arm included) used to run ahead of the session-activity
+// gates above, so a forged marker could fire a handler on a turn those gates
+// would have withheld. The marker peek itself is unchanged — only the order.
+let handled = false;
+
+// Priority: Agent handlers first (more specific)
+if (activeAgent && AGENT_HANDLERS[activeAgent]) {
+  debugLog('UnifiedStop', 'Executing agent handler', { agent: activeAgent });
+  handled = executeHandler(AGENT_HANDLERS[activeAgent], hookContext);
+}
+
+// Then skill handlers
+if (!handled && activeSkill && SKILL_HANDLERS[activeSkill]) {
+  debugLog('UnifiedStop', 'Executing skill handler', { skill: activeSkill });
+
+  // Special case: development-pipeline uses simple echo.
+  // Plan P1-F3 (rb038/rb020): a continue:false emission always carries a
+  // stopReason and goes through the same stdout channel the handler path
+  // uses — one well-formed object, no bare console.log double-write.
+  if (activeSkill === 'development-pipeline') {
+    process.stdout.write(JSON.stringify({
+      continue: false,
+      stopReason: 'development-pipeline skill owns this turn',
+    }) + '\n');
+    handled = true;
+  } else {
+    handled = executeHandler(SKILL_HANDLERS[activeSkill], hookContext);
+  }
+}
+
 if (recordedDead) {
   // br290b: post-completion Stop — approve silently, nothing to advance.
   recordTurnObservability();
@@ -554,9 +579,16 @@ const nextPhase = (() => {
     return require('../lib/pdca/phase').getNextPdcaPhase(currentPhase) || null;
   } catch (_) { return null; }
 })();
-const matchRate = require('../lib/quality/match-rate').isMeasured(featureEntry?.matchRate)
-  ? featureEntry.matchRate
-  : null;
+// P4-B1: an unavailable match-rate module must never crash the hook after
+// handlers may have emitted — continue without match-rate.
+let matchRate = null;
+try {
+  matchRate = require('../lib/quality/match-rate').isMeasured(featureEntry?.matchRate)
+    ? featureEntry.matchRate
+    : null;
+} catch (e) {
+  debugLog('UnifiedStop', 'match-rate module unavailable — continuing without it', { error: e.message });
+}
 const level = pdcaStatus?.pipeline?.level || null;
 const agentName = activeAgent || activeSkill || null;
 

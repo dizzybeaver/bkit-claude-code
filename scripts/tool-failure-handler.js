@@ -101,11 +101,32 @@ function classifyFailure(tool, error, input, toolResponse) {
     };
   }
 
+  // br878 part 2: expected-failure arm — a failure carrying ONLY an exit code
+  // (no error text beyond the code itself, e.g. a lint probe reporting
+  // success) is a benign expected failure, not a defect: emit nothing.
+  if (exitCode !== null) {
+    const residue = err
+      .replace(/exit (?:code|status)[:\s]*\d+/gi, '')
+      .replace(/non-zero/g, '')
+      .replace(/[\s.:;-]+/g, '');
+    if (residue.length === 0) {
+      return {
+        pattern: 'benign_expected_failure',
+        severity: 'low',
+        recovery: '',
+      };
+    }
+  }
+
   if (err.includes('exit code') || err.includes('non-zero') || err.includes('exit status')) {
+    // Plan FR-08: stale replays become self-identifying (br878/rb033) — the
+    // recovery line carries tool, exit code, timestamp, and the command head
+    // so a replayed recovery hint can be traced to its originating failure.
+    const cmd = (typeof input === 'object' && input && input.command) ? String(input.command) : 'unknown';
     return {
       pattern: 'exit_nonzero',
       severity: 'low',
-      recovery: `${tool} command exited with non-zero status. Review the error output above.`,
+      recovery: `${tool} exit ${exitCode === null ? 'unknown' : exitCode} at ${new Date().toISOString()} for '${cmd.slice(0, 60)}' — review the error output above.`,
     };
   }
 
@@ -146,30 +167,24 @@ try {
     }
 
     const learningsPath = path.join(learningsDir, 'tool-failures.json');
-    let learnings = [];
 
-    if (fs.existsSync(learningsPath)) {
-      try {
-        learnings = JSON.parse(fs.readFileSync(learningsPath, 'utf8'));
-      } catch (_) {
-        learnings = [];
-      }
-    }
-
-    learnings.push({
-      timestamp: new Date().toISOString(),
-      tool: toolName,
-      pattern: classification.pattern,
-      severity: classification.severity,
-      error: String(errorMsg).substring(0, 300),
+    // P2-TF-1: the plugin-global learnings file used an unlocked
+    // read-modify-write — route it through stateStore.lockedUpdate (file lock
+    // + atomic tmp+rename write), the same pattern lib/pdca/status-core.js
+    // uses for the pdca status registry.
+    const { lockedUpdate } = require('../lib/core/state-store');
+    lockedUpdate(learningsPath, (learnings) => {
+      const next = Array.isArray(learnings) ? learnings : [];
+      next.push({
+        timestamp: new Date().toISOString(),
+        tool: toolName,
+        pattern: classification.pattern,
+        severity: classification.severity,
+        error: String(errorMsg).substring(0, 300),
+      });
+      // Keep last 100 entries
+      return next.slice(-100);
     });
-
-    // Keep last 100 entries
-    if (learnings.length > 100) {
-      learnings = learnings.slice(-100);
-    }
-
-    fs.writeFileSync(learningsPath, JSON.stringify(learnings, null, 2));
     debugLog('ToolFailure', 'Learning recorded', { pattern: classification.pattern });
   }
 } catch (e) {
@@ -203,6 +218,11 @@ if (isInterrupt) {
 } else if (classification.pattern === 'success_suppressed') {
   // rb006: verified exit-0 event — no recovery guidance, allow silently
   debugLog('ToolFailure', 'exit0-suppressed (wave1027 FR-01)', { toolName });
+  outputEmpty();
+} else if (classification.pattern === 'benign_expected_failure') {
+  // br878 part 2: expected-failure probe (exit-code-only, no error text) —
+  // emit nothing, it is not a defect
+  debugLog('ToolFailure', 'benign expected failure — no recovery guidance', { toolName });
   outputEmpty();
 } else {
   outputAllow(classification.recovery, 'PostToolUseFailure');

@@ -21,6 +21,10 @@
  */
 
 const { readStdinSync, parseHookInput, outputAllow, outputBlockWithContext, outputAsk } = require('../lib/core/io');
+// rb018: readStdinSafe is not yet re-exported through lib/core/io.js (io.js is
+// outside this fix-wave's file scope); import from the readers sub-module until
+// that re-export lands.
+const { readStdinSafe } = require('../lib/core/_io/readers');
 const { debugLog } = require('../lib/core/debug');
 const { getActiveSkill, getActiveAgent } = require('../lib/task/context');
 // v2.1.37 (ENH-466): the host's permission mode decides whether an `ask` reaches
@@ -142,6 +146,35 @@ const DEPLOY_PREVIEW_FLAGS = [
 ];
 
 /**
+ * rb018/P1-F3: boundary-aware match for a deployment preview flag.
+ *
+ * The plain substring test both over- and under-matched: `--dry-run` fired on
+ * any occurrence inside the command text (including inside a longer echoed
+ * argument), while the compact `-oyaml` spelling of `-o yaml` was invisible,
+ * so a previewed `kubectl delete -oyaml` was refused as if unpreviewed.
+ * Tokens are split on whitespace and quote characters; `-o yaml` / `-o json`
+ * also accept the joined (`-oyaml`, `-ojson`) and `-o=json` spellings, and a
+ * long flag counts when it is a whole token or an `=`-suffixed token
+ * (`--dry-run=client`).
+ *
+ * @param {string} lowered - lowercased command text
+ * @returns {boolean}
+ */
+function hasDeployPreviewFlag(lowered) {
+  const tokens = lowered.split(/[\s'"`]+/).filter(Boolean);
+  return DEPLOY_PREVIEW_FLAGS.some((flag) => {
+    if (flag.includes(' ')) {
+      const [head, tail] = flag.split(' ');
+      return tokens.some((t, i) => (t === head
+        && (tokens[i + 1] === tail || tokens[i + 1] === `=${tail}`))
+        || t === `${head}${tail}`
+        || t === `${head}=${tail}`);
+    }
+    return tokens.some((t) => t === flag || t.startsWith(`${flag}=`));
+  });
+}
+
+/**
  * Phase 9 deployment safety checks.
  *
  * ENH-467 (v2.1.37) — graded, not a flat refusal.
@@ -164,7 +197,7 @@ function handlePhase9DeployPre(input) {
   const lowered = command.toLowerCase();
 
   // A previewed destroy is not a destroy.
-  if (DEPLOY_PREVIEW_FLAGS.some((f) => lowered.includes(f))) return null;
+  if (hasDeployPreviewFlag(lowered)) return null;
   if (/\bterraform\s+plan\b/.test(lowered)) return null;
 
   const patterns = [
@@ -264,12 +297,54 @@ debugLog('UnifiedBashPre', 'Hook started');
 // Read hook context
 let input = {};
 try {
-  input = readStdinSync();
+  const stdin = readStdinSafe();
+  if (!stdin.ok) {
+    // Plan FR-01: parse failure fails CLOSED at the Bash gate (rb018).
+    // The old path swallowed the failure into `input = {}`, every guard found
+    // no command in the empty payload, and the hook allowed a command it had
+    // never seen. The permission mode is unknowable from an unparseable
+    // payload, so the ask is emitted at 'default' — the unsuppressed polarity.
+    debugLog('UnifiedBashPre', 'stdin read failed — gate fails closed to ask', {
+      reason: stdin.reason, bytes: stdin.raw ? stdin.raw.length : 0,
+    });
+    outputAsk(
+      'bkit: hook could not validate this command (stdin parse failure) — human decision required',
+      [
+        'Retry the same command once — a transient stdin truncation re-reads cleanly',
+        'Split it into smaller single-purpose commands so each can be validated',
+      ],
+      'default'
+    );
+  }
+  input = stdin.payload;
   if (typeof input === 'string') {
     input = JSON.parse(input);
   }
 } catch (e) {
   debugLog('UnifiedBashPre', 'Failed to parse input', { error: e.message });
+}
+
+// Plan FR-01 (RB5-3 shape 4): a schema-valid payload whose command field is
+// missing or not a string parses OK but leaves the guards nothing to grade —
+// the old path fell through to a silent allow. Same fail-closed ask as the
+// parse-failure arm above.
+{
+  const rawCommand = (input && typeof input === 'object' && input.tool_input && typeof input.tool_input === 'object')
+    ? input.tool_input.command
+    : undefined;
+  if (typeof rawCommand !== 'string') {
+    debugLog('UnifiedBashPre', 'stdin schema mismatch — command field missing; gate fails closed to ask', {
+      hasInput: !!input,
+    });
+    outputAsk(
+      'bkit: hook could not validate this command (stdin schema mismatch) — human decision required',
+      [
+        'Retry the command — a malformed tool envelope is usually transient',
+        'Split it into smaller single-purpose commands so each can be validated',
+      ],
+      'default'
+    );
+  }
 }
 
 // Get current context
@@ -334,6 +409,36 @@ let blocked = false;
 let pendingAsk = null;
 
 /**
+ * P4-B2: merge a later ask into the parked one instead of discarding it.
+ *
+ * Guards are cumulative and the strictest verdict wins. A deny never reaches
+ * here — it emits immediately through outputBlockWithContext (which exits the
+ * process), so deny > ask holds structurally. Everything that does reach the
+ * park is an ask: the merge keeps the first ask's confidence, unions the rule
+ * ids, and appends the later detector's reason, so the confirmation the user
+ * finally sees names every guard that fired — not only the first.
+ *
+ * @param {{ids: string[], confidence: number, alternatives: string[],
+ *          command: string, reason: string}|null} next - ask to fold in
+ * @returns {void}
+ */
+function mergePendingAsk(next) {
+  if (!next) return;
+  if (!pendingAsk) {
+    pendingAsk = next;
+    return;
+  }
+  pendingAsk = {
+    ...pendingAsk,
+    ids: [...pendingAsk.ids, ...next.ids],
+    reason: `${pendingAsk.reason} Additionally: ${next.reason}`,
+    alternatives: (pendingAsk.alternatives && pendingAsk.alternatives.length)
+      ? pendingAsk.alternatives
+      : next.alternatives,
+  };
+}
+
+/**
  * Apply a graded verdict from one of the context guards.
  *
  * ENH-467/468 (v2.1.37). Both guards used to emit their own refusal inline, which
@@ -351,15 +456,13 @@ function applyContextVerdict(verdict, source) {
     outputBlockWithContext(verdict.reason, verdict.alternatives, 'PreToolUse');
     return true;
   }
-  if (!pendingAsk) {
-    pendingAsk = {
-      ids: [source],
-      confidence: 1,
-      alternatives: verdict.alternatives,
-      command: parseHookInput(input).command || '',
-      reason: verdict.reason,
-    };
-  }
+  mergePendingAsk({
+    ids: [source],
+    confidence: 1,
+    alternatives: verdict.alternatives,
+    command: parseHookInput(input).command || '',
+    reason: verdict.reason,
+  });
   return false;
 }
 
@@ -370,7 +473,10 @@ if (activeSkill === 'phase-9-deployment') {
 
 // QA checks (zero-script-qa skill or qa-monitor agent)
 if (!blocked && (activeSkill === 'zero-script-qa' || activeAgent === 'qa-monitor')) {
-  blocked = applyContextVerdict(handleQaPreBash(input), 'zero-script-qa');
+  // P1-F5: name the guard that actually fired, not a hardcoded skill id —
+  // a qa-monitor agent ask used to be attributed to 'zero-script-qa'.
+  const qaGuardSource = activeSkill === 'zero-script-qa' ? 'zero-script-qa' : 'qa-monitor';
+  blocked = applyContextVerdict(handleQaPreBash(input), qaGuardSource);
 }
 
 // ============================================================
@@ -440,7 +546,6 @@ if (!blocked) {
         ac.incrementStat('destructiveBlocked');
       } catch (_) {}
 
-      blocked = true;
       outputBlockWithContext(reason, alternatives, 'PreToolUse');
     }
 
@@ -463,7 +568,7 @@ if (!blocked) {
       const askRules = (result.rules || []).filter((r) => r.action === 'ask');
       if (askRules.length > 0) {
         const ids = askRules.map((r) => r.id);
-        pendingAsk = {
+        mergePendingAsk({
           ids,
           confidence: result.confidence,
           // ENH-459 (v2.1.36): advice that fits the rule, shared with the deny
@@ -475,7 +580,7 @@ if (!blocked) {
             + `${ids.join(', ')} (${askRules.map((r) => r.name).join('; ')}). `
             + 'This is a confirmation, not a refusal — the operation is reversible or narrowly '
             + 'scoped enough that refusing it outright would be the wrong call.',
-        };
+        });
       }
     }
   } catch (_) {}
@@ -508,7 +613,6 @@ if (!blocked) {
         });
       } catch (_) { /* audit failure non-fatal */ }
       outputBlockWithContext(verdict.reason, verdict.alternatives, 'PreToolUse');
-      blocked = true;
     }
     // warning severity → allow with audit-only (no block, no additionalContext spam)
     if (!blocked && verdict.matched && verdict.severity === 'warning') {
@@ -547,55 +651,66 @@ if (!blocked) {
     const parsed = guard.detectPushCommand(toolInput.command || '');
     if (parsed.isPush) {
       const ac2 = require('../lib/control/automation-controller');
-      const trustLevel = (() => {
-        try { const lv = ac2.getCurrentLevel(); return typeof lv === 'string' ? lv : `L${lv}`; }
-        catch (_) { return 'L2'; }
-      })();
-      const classified = guard.classifyRemote(parsed.remote || 'origin');
-      const verdict = guard.shouldGuard(parsed, classified, trustLevel);
+      // P1-F7: an unreadable trust level must SKIP the guard, never feed a
+      // fabricated 'L2' into guard math — invented state both blocks legit
+      // pushes and reads as a real decision in the audit trail. Skipping this
+      // guard only; the guards after it still run.
+      let trustLevel = null;
       try {
-        const audit = require('../lib/audit/audit-logger');
-        audit.writeAuditLog({
-          actor: 'hook', actorId: 'unified-bash-pre',
-          action: 'git_push_intercepted', category: 'control',
-          target: parsed.remote || 'origin', targetType: 'config',
-          details: {
-            force: parsed.force, branch: parsed.branch,
-            kind: classified.kind, isFork: classified.isFork,
-            trustLevel, action: verdict.action,
-          },
-          result: verdict.action === 'allow' ? 'success' : 'blocked',
-          destructiveOperation: parsed.force === true,
-          blastRadius: parsed.force ? 'high' : null,
-          reason: verdict.reason,
-        });
-      } catch (_) { /* graceful */ }
-      /*
-       * ENH-463 (v2.1.36) — honour the guard's three verdicts instead of two.
-       *
-       * `ask` was emitted through outputBlockWithContext, the same call as
-       * `deny`, so every confirmation this guard computed was presented as a
-       * refusal. shouldGuard() has always returned `ask` for an upstream push —
-       * meaning `git push origin main` was refused outright rather than
-       * confirmed — and the distinction it took the trouble to make was
-       * discarded one line later. Same class as ENH-410: decided, then dropped.
-       *
-       * An `ask` is parked in pendingAsk rather than emitted here, per the
-       * contract documented at the top of this file: outputAsk() exits, so
-       * emitting inline would skip the Memory Enforcer and turn a later DENY
-       * into a click-through.
-       */
-      if (verdict.action === 'deny') {
-        outputBlockWithContext(verdict.reason, verdict.alternatives, 'PreToolUse');
-        blocked = true;
-      } else if (verdict.action === 'ask' && !pendingAsk) {
-        pendingAsk = {
-          ids: ['ENH-298'],
-          confidence: 1,
-          alternatives: verdict.alternatives,
-          command: toolInput.command || '',
-          reason: verdict.reason,
-        };
+        const lv = ac2.getCurrentLevel();
+        trustLevel = typeof lv === 'string' ? lv : `L${lv}`;
+      } catch (_) {
+        debugLog('UnifiedBashPre', 'trustLevel unreadable — guard skipped', {});
+      }
+      if (trustLevel !== null) {
+        const classified = guard.classifyRemote(parsed.remote || 'origin');
+        const verdict = guard.shouldGuard(parsed, classified, trustLevel);
+        try {
+          const audit = require('../lib/audit/audit-logger');
+          audit.writeAuditLog({
+            actor: 'hook', actorId: 'unified-bash-pre',
+            action: 'git_push_intercepted', category: 'control',
+            target: parsed.remote || 'origin', targetType: 'config',
+            details: {
+              force: parsed.force, branch: parsed.branch,
+              kind: classified.kind, isFork: classified.isFork,
+              trustLevel, action: verdict.action,
+            },
+            // P4-B2 addendum: name the verdict truthfully — an ask is not a
+            // block, and an audit row that says 'blocked' for a parked
+            // confirmation is the ENH-393 false-assurance class again.
+            result: verdict.action === 'allow' ? 'success' : verdict.action === 'ask' ? 'ask' : 'blocked',
+            destructiveOperation: parsed.force === true,
+            blastRadius: parsed.force ? 'high' : null,
+            reason: verdict.reason,
+          });
+        } catch (_) { /* graceful */ }
+        /*
+         * ENH-463 (v2.1.36) — honour the guard's three verdicts instead of two.
+         *
+         * `ask` was emitted through outputBlockWithContext, the same call as
+         * `deny`, so every confirmation this guard computed was presented as a
+         * refusal. shouldGuard() has always returned `ask` for an upstream push —
+         * meaning `git push origin main` was refused outright rather than
+         * confirmed — and the distinction it took the trouble to make was
+         * discarded one line later. Same class as ENH-410: decided, then dropped.
+         *
+         * An `ask` is parked in pendingAsk rather than emitted here, per the
+         * contract documented at the top of this file: outputAsk() exits, so
+         * emitting inline would skip the Memory Enforcer and turn a later DENY
+         * into a click-through.
+         */
+        if (verdict.action === 'deny') {
+          outputBlockWithContext(verdict.reason, verdict.alternatives, 'PreToolUse');
+        } else if (verdict.action === 'ask') {
+          mergePendingAsk({
+            ids: ['ENH-298'],
+            confidence: 1,
+            alternatives: verdict.alternatives,
+            command: toolInput.command || '',
+            reason: verdict.reason,
+          });
+        }
       }
     }
   } catch (_) { /* push-event-guard unavailable — fail-open */ }
@@ -720,7 +835,6 @@ if (!blocked) {
         // This is the Memory Enforcer path — bkit differentiation #1 — and the
         // four other block sites in this file already called the right helper.
         outputBlockWithContext(reason, alternatives, 'PreToolUse');
-        blocked = true;
       } else if (verdict.warnings.length > 0 && effortLevel === 'high') {
         // High-effort mode surfaces soft warnings to the user via debug log.
         debugLog('UnifiedBashPre', 'memory-directive warn matched', {
