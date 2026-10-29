@@ -80,7 +80,11 @@ try {
 if (isPdcaTask && pdcaPhase && pdcaFeature) {
   const fs = require('fs');
   const path = require('path');
-  const pdcaStatusPath = path.resolve(process.cwd(), '.bkit/state/pdca-status.json');
+  // Plan FR-10 (rb039): resolve the registry from CLAUDE_PROJECT_DIR (fallback
+  // cwd) — a bare process.cwd() reads/writes the WRONG project's registry when
+  // the host cwd differs from the project root (rb022/rb041 split-brain family).
+  const projectRoot = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const pdcaStatusPath = path.resolve(projectRoot, '.bkit/state/pdca-status.json');
 
   try {
     if (fs.existsSync(pdcaStatusPath)) {

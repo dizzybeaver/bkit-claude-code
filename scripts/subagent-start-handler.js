@@ -158,6 +158,30 @@ function main() {
     });
   }
 
+  // Plan FR-10 (rb037 P3-SSH-1): session scoping. An existing roster belongs
+  // to the session recorded on it — session B's spawns must not register into
+  // session A's roster. Deny-biased: a state bound to a DIFFERENT live session
+  // is left untouched (no init either — rewriting it would clobber A's state).
+  if (existingState && existingState.enabled && existingState.sessionId
+    && sessionId && existingState.sessionId !== sessionId) {
+    debugLog('SubagentStart', 'Spawn skipped: agent state bound to another session', {
+      stateSession: existingState.sessionId,
+      spawnSession: sessionId,
+      agentType,
+    });
+    outputEmpty();
+    process.exit(0);
+  }
+
+  // Plan FR-10 (rb037 P3-SSH-1): null agent_id → skip. addTeammate would file
+  // a null-keyed roster row (id: null) that poisons every consumer iterating
+  // the roster; a spawn CC did not identify is not registrable.
+  if (!agentId) {
+    debugLog('SubagentStart', 'Spawn skipped: no agent_id in payload', { agentType });
+    outputEmpty();
+    process.exit(0);
+  }
+
   // Add teammate.
   //
   // ENH-376: `agentId` is the identity key — it is unique per spawned instance,
@@ -179,8 +203,13 @@ function main() {
     });
   }
 
+  // Plan FR-10 (rb037 P3-SSH-2): the per-spawn systemMessage was unconditional
+  // spam in the transcript. Always logged to debugLog; surfaced to the user
+  // only when the br144 advisory gate is explicitly enabled.
+  const spawnNote = `Subagent ${agentName} spawned`;
+  debugLog('SubagentStart', spawnNote, { agentId, agentType, sessionId });
+
   const response = {
-    systemMessage: `Subagent ${agentName} spawned`,
     hookSpecificOutput: {
       hookEventName: "SubagentStart",
       agentId,

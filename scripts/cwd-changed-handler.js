@@ -46,8 +46,23 @@ if (indicators.hasBkit) {
   try {
     if (fs.existsSync(pdcaStatusPath)) {
       const status = JSON.parse(fs.readFileSync(pdcaStatusPath, 'utf8'));
-      pdcaPhase = status.currentPhase || status.phase || 'idle';
+      // Plan FR-09 (rb029): `currentPhase`/`phase` are dead v1 registry keys —
+      // the v2.1.34 migration moved the live phase onto the primary feature
+      // row. Same accessor notification-handler / pdca-doc-changed-handler
+      // already migrated to; the old chain reported every active cycle idle.
+      const featureRow = status.primaryFeature && status.features
+        ? status.features[status.primaryFeature]
+        : null;
+      pdcaPhase = (featureRow && featureRow.phase) || null;
       primaryFeature = status.primaryFeature || null;
+      // Plan FR-09 (rb029, P1-F2): session-bind the claim. A primary row owned
+      // by a DIFFERENT session is not this session's active cycle — do not
+      // present it as such on project switch (deny-biased: annotate instead
+      // of silently claiming or silently dropping).
+      if (pdcaPhase && featureRow && featureRow.ownerSession
+        && input.session_id && featureRow.ownerSession !== input.session_id) {
+        pdcaPhase = `${pdcaPhase} (other session)`;
+      }
       debugLog('CwdChanged', 'PDCA state loaded', { pdcaPhase, primaryFeature });
     }
   } catch (e) {

@@ -15,13 +15,21 @@ const { getActiveSkill, getActiveAgent } = require('../lib/task/context');
 const { lockedUpdate } = require('../lib/core/state-store');
 const { BKIT_VERSION } = require('../lib/core/version');
 
-// M10 fix (audit): the layer-6 auditPostHoc call below is intentionally
+// M10 fix (audit, rb031): the layer-6 auditPostHoc call below is intentionally
 // fire-and-forget (PostToolUse must not block tool flow), so it is not awaited.
 // A rejection that resolves AFTER the synchronous hook body completes would
-// surface as a process-level unhandled-rejection. This guard swallows those —
-// the .catch() on the call handles the in-flight case; this handles the
-// post-tick case — keeping observability-only failures from polluting stderr.
-process.on('unhandledRejection', (_reason) => { /* observability-only — see M10 */ });
+// surface as a process-level unhandled-rejection. The .catch() on the call
+// handles the in-flight case; this handler covers the post-tick case.
+//
+// rb031: the previous `(_reason) => {}` was a process-wide swallower — the
+// exact pattern lib/core/_io/observability.js:143 documents as abandoned
+// (a listener here also suppresses Node 15+ default fatal behavior, so a real
+// async defect was doubly invisible). Log every rejection instead of eating it.
+process.on('unhandledRejection', (reason) => {
+  debugLog('UnifiedBashPost', 'Unhandled rejection', {
+    error: reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason),
+  });
+});
 
 // ============================================================
 // Handler: qa-monitor-post (Bash)
@@ -81,16 +89,41 @@ if (activeAgent === 'qa-monitor') {
 }
 
 // v2.0.0: Audit logging for bash commands
+// Plan FR-10 (rb031 P2-UBP-2): the row used to record result:'success'
+// unconditionally — failed commands overstated the ledger (false-assurance
+// family). Derive the outcome from the payload: 'failure' on any failure
+// signal, 'success' ONLY on a confirmed exit code 0, and 'skipped' with
+// details.outcome='unmeasured' when the payload carries no signal at all
+// (never fabricate). Exit-code extraction mirrors tool-failure-handler rb006.
 try {
   const toolInput = input.tool_input || {};
   const command = toolInput.command || '';
+  const toolResponse = input.tool_response || input.tool_output || null;
+  const toolError = input.tool_error || input.error || '';
+  const exitMatch = String(toolError).match(/exit (?:code|status)[:\s]*(\d+)/i);
+  const exitCode = exitMatch
+    ? parseInt(exitMatch[1], 10)
+    : (toolResponse && typeof toolResponse === 'object'
+      ? (typeof toolResponse.exit === 'number' ? toolResponse.exit
+        : (typeof toolResponse.exitCode === 'number' ? toolResponse.exitCode : null))
+      : null);
+  const failed = exitCode === null
+    ? Boolean(toolError)
+      || (toolResponse && typeof toolResponse === 'object'
+        && (toolResponse.error || toolResponse.interrupted))
+    : exitCode !== 0;
+  const result = exitCode === 0 ? 'success' : (failed ? 'failure' : 'skipped');
   const audit = require('../lib/audit/audit-logger');
   audit.writeAuditLog({
     actor: 'system', actorId: 'unified-bash-post',
     action: 'command_executed',
     category: 'bash',
     target: command.substring(0, 200), targetType: 'command',
-    result: 'success', destructiveOperation: false
+    result,
+    details: exitCode === null && result === 'skipped'
+      ? { outcome: 'unmeasured', exitCode: null }
+      : { outcome: result, exitCode },
+    destructiveOperation: false
   });
 } catch (_) {}
 
@@ -140,11 +173,20 @@ try {
   try { checkpointMgr = require('../lib/control/checkpoint-manager'); } catch (_) { /* graceful */ }
   let ac = null;
   try { ac = require('../lib/control/automation-controller'); } catch (_) { /* graceful */ }
+  // Plan FR-10 (rb031 P2-UBP-1): a failed trustLevel read used to fabricate a
+  // literal 'L2' — a never-measured value feeding layer-6 math (same
+  // fabricated-default family as rb018). Degrade to 'unknown' and SKIP the
+  // layer-6 audit entirely; unknown trust must never be treated as measured.
   const trustLevel = (() => {
-    try { const lv = ac && ac.getCurrentLevel(); return typeof lv === 'string' ? lv : (lv != null ? `L${lv}` : 'L2'); }
-    catch (_) { return 'L2'; }
+    try {
+      const lv = ac && ac.getCurrentLevel();
+      if (lv == null) return 'unknown';
+      return typeof lv === 'string' ? lv : `L${lv}`;
+    } catch (_) {
+      return 'unknown';
+    }
   })();
-  if (checkpointMgr) {
+  if (checkpointMgr && trustLevel !== 'unknown') {
     const layer6 = layer6Mod.createLayer6Audit({
       audit: auditLogger,
       checkpoint: checkpointMgr,
@@ -160,6 +202,10 @@ try {
       feature: input.feature || (input.context && input.context.feature),
       phase: input.phase || (input.context && input.context.phase),
     }).catch(() => { /* graceful */ });
+  } else if (trustLevel === 'unknown') {
+    // rb031: the skip itself must be visible — log silence here was exactly
+    // how the fabricated 'L2' stayed unnoticed (debug-trace-first).
+    debugLog('UnifiedBashPost', 'Layer-6 audit skipped: trustLevel unknown (read failure)', {});
   }
 } catch (_) { /* layer-6 unavailable — fail-open */ }
 

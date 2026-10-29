@@ -54,22 +54,17 @@ try {
   }
 
   const historyPath = path.join(stateDir, 'session-history.json');
-  let history = [];
-
-  if (fs.existsSync(historyPath)) {
-    try {
-      history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
-    } catch (_) {
-      history = [];
-    }
-  }
 
   const pdcaStatus = getPdcaStatusFull();
   const summary = {
     sessionId,
     reason,
     endedAt: new Date().toISOString(),
-    feature: pdcaStatus ? (pdcaStatus.feature || pdcaStatus.featureName || null) : null,
+    // Plan FR-09 (rb025 P2-SE-3): `feature`/`featureName` are dead v1 keys; the
+    // v2 registry carries the active feature as `primaryFeature`.
+    feature: pdcaStatus
+      ? (pdcaStatus.primaryFeature || pdcaStatus.feature || null)
+      : null,
     // v2.1.34: `currentPhase` is a v1 schema key and always undefined; the phase
     // lives on the feature entry.
     phase: pdcaStatus
@@ -82,14 +77,18 @@ try {
     progress: pdcaStatus ? (pdcaStatus.progress || null) : null,
   };
 
-  history.push(summary);
-
-  // Keep only the last 20 entries
-  if (history.length > 20) {
-    history = history.slice(-20);
-  }
-
-  fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+  // Plan FR-09 (rb025 P2-SE-1): the read→push→writeFileSync was UNLOCKED —
+  // concurrent session ends each read the same history and the last writer
+  // wins, losing the other summaries. Route the RMW through lockedUpdate
+  // (same primitive task-created-handler / unified-bash-post already use);
+  // it serializes the read-modify-write and writes atomically.
+  const { lockedUpdate } = require('../lib/core/state-store');
+  lockedUpdate(historyPath, (current) => {
+    const history = Array.isArray(current) ? current : [];
+    history.push(summary);
+    // Keep only the last 20 entries
+    return history.length > 20 ? history.slice(-20) : history;
+  });
   debugLog('SessionEnd', 'Session summary saved', { sessionId });
 } catch (e) {
   debugLog('SessionEnd', 'Session summary save failed (non-critical)', { error: e.message });
@@ -101,11 +100,11 @@ try {
   writeAuditLog({
     actor: 'hook',
     actorId: 'session-end-handler',
-    action: 'phase_transition',
+    action: 'session_end',
     category: 'control',
     target: sessionId,
     targetType: 'feature',
-    details: { event: 'session_end', reason },
+    details: { reason },
     result: 'success',
   });
   debugLog('SessionEnd', 'Audit summary written');
@@ -114,21 +113,35 @@ try {
 }
 
 // Step 4: Cleanup stale runtime data
+//
+// Plan FR-09 (rb025 P2-SE-2): the old janitor deleted ANY file in runtime/
+// idle >= 24h, including first-run-seen.json (the user's "Skip permanently"
+// silently reverted), cc-version.json, agent-state.json, control-state.json,
+// error-log.json (the stop-failure postmortem ring) and memory-directives.json.
+// Deny-biased policy now: the janitor deletes ONLY artifacts from its own
+// namespace — the *.tmp / *.bak leftovers of the atomic-write pattern this
+// codebase uses — everything else in runtime/ is preserved regardless of age.
 try {
   const { STATE_PATHS } = require('../lib/core/paths');
   const runtimeDir = STATE_PATHS.runtime();
+
+  // Artifacts the janitor itself owns (named, not inferred): orphaned
+  // temp/backup files left by interrupted atomic writes. User preference
+  // and state files are NEVER in this namespace, so they can never match.
+  const JANITOR_OWNED = [/\.tmp$/, /\.bak$/, /\.lock$/];
 
   if (fs.existsSync(runtimeDir)) {
     const staleThreshold = Date.now() - 24 * 60 * 60 * 1000; // 24 hours
     const files = fs.readdirSync(runtimeDir);
 
     for (const file of files) {
+      if (!JANITOR_OWNED.some((re) => re.test(file))) continue; // preserve
       const filePath = path.join(runtimeDir, file);
       try {
         const stat = fs.statSync(filePath);
         if (stat.isFile() && stat.mtimeMs < staleThreshold) {
           fs.unlinkSync(filePath);
-          debugLog('SessionEnd', 'Stale file removed', { file });
+          debugLog('SessionEnd', 'Stale janitor-owned artifact removed', { file });
         }
       } catch (_) { /* skip individual file errors */ }
     }
