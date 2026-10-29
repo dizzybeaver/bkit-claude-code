@@ -290,6 +290,137 @@ assert('TC-HC-30',
 );
 
 // ============================================================
+// Section 4: event-ledger chain — write→warn→fix→resolve end-to-end
+// (stale-replay-fix-1029, design §8.1 integration row)
+//
+// Runs unified-write-post.js as a subprocess (HOS-08 pattern) against an
+// isolated CLAUDE_PLUGIN_DATA/CLAUDE_PROJECT_DIR, asserting the ledger file
+// state at every hop: open on the invalid write, resolved on the corrective
+// rewrite, quiet on subsequent valid writes (no stale replay of the
+// resolution itself).
+// ============================================================
+
+const os = require('os');
+const { runHook: chainRunHook } = require(path.join(PROJECT_ROOT, 'test/helpers/hook-runner.js'));
+
+const CHAIN_SESSION_ID = 'hook-chain-evt-session';
+const CHAIN_TEMP_DIRS = [];
+process.on('exit', () => {
+  for (const dir of CHAIN_TEMP_DIRS) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+  }
+});
+
+const CHAIN_PLAN_SECTIONS = [
+  'Executive Summary', 'Overview', 'Scope', 'Requirements', 'Success Criteria',
+  'Risks and Mitigation', 'Architecture Considerations', 'Convention Prerequisites',
+  'Next Steps', 'Version History',
+];
+
+function chainPlanDoc(sections) {
+  return '# Hook Chain Plan\n\n' +
+    sections.map(s => `## ${s}\n\nContent for ${s}.\n`).join('\n');
+}
+
+function chainReadLedger(pluginData) {
+  const file = path.join(pluginData, 'learnings', 'hook-events.json');
+  if (!fs.existsSync(file)) return [];
+  const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+// -- shared chain state -------------------------------------------------
+const chainProject = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-chain-proj-'));
+const chainPluginData = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-chain-data-'));
+CHAIN_TEMP_DIRS.push(chainProject, chainPluginData);
+fs.mkdirSync(path.join(chainProject, 'docs', '01-plan', 'features'), { recursive: true });
+const chainDocPath = path.join(chainProject, 'docs', '01-plan', 'features', 'chain.plan.md');
+const chainHookOpts = {
+  env: {
+    CLAUDE_PLUGIN_DATA: chainPluginData,
+    CLAUDE_PROJECT_DIR: chainProject,
+    CLAUDE_CODE_SESSION_ID: CHAIN_SESSION_ID,
+  },
+  cwd: chainProject,
+  timeout: 10000,
+};
+
+// Hop 1: invalid write → warning envelope + open ledger row.
+fs.writeFileSync(chainDocPath, chainPlanDoc(CHAIN_PLAN_SECTIONS.slice(1)));
+const chainWarn = chainRunHook('scripts/unified-write-post.js', {
+  hook_event_name: 'PostToolUse',
+  tool_name: 'Write',
+  tool_input: { file_path: chainDocPath },
+  tool_response: 'File written',
+}, chainHookOpts);
+
+const chainLedgerAfterOpen = chainReadLedger(chainPluginData);
+const chainOpenRows = chainLedgerAfterOpen.filter(r => r.family === 'tpl' && r.resolvedAt === null);
+const chainWarnCtx = chainWarn.stdout && chainWarn.stdout.hookSpecificOutput
+  ? chainWarn.stdout.hookSpecificOutput.additionalContext : '';
+
+// TC-HC-31: warning carries a self-identifying envelope matching the row.
+assert('TC-HC-31',
+  chainWarn.exitCode === 0 &&
+  typeof chainWarnCtx === 'string' &&
+  chainOpenRows.length === 1 &&
+  chainWarnCtx.includes(`[bkit:evt:${chainOpenRows[0].id}]`),
+  'Chain hop 1: invalid write emits [bkit:evt:<id>] warning matching the open ledger row'
+);
+
+// TC-HC-32: ledger row schema mid-chain — open, TTL-set, session-bound.
+const chainOpenRow = chainOpenRows[0] || {};
+assert('TC-HC-32',
+  chainOpenRow.target === chainDocPath &&
+  chainOpenRow.session === CHAIN_SESSION_ID &&
+  typeof chainOpenRow.expiresAt === 'number' &&
+  chainOpenRow.expiresAt > Date.now() &&
+  chainOpenRow.resolvedAt === null,
+  'Chain hop 1: open row has target/session/expiresAt schema and is unresolved'
+);
+
+// Hop 2: corrective rewrite with all sections → RESOLVED announcement.
+fs.writeFileSync(chainDocPath, chainPlanDoc(CHAIN_PLAN_SECTIONS));
+const chainResolve = chainRunHook('scripts/unified-write-post.js', {
+  hook_event_name: 'PostToolUse',
+  tool_name: 'Write',
+  tool_input: { file_path: chainDocPath },
+  tool_response: 'File written',
+}, chainHookOpts);
+
+const chainResolveOut = JSON.stringify(chainResolve.stdout);
+const chainRowAfterResolve = chainReadLedger(chainPluginData)
+  .find(r => r.id === (chainOpenRow.id || ''));
+
+// TC-HC-33: pass path announces RESOLVED naming the id; row flips resolved.
+assert('TC-HC-33',
+  chainResolve.exitCode === 0 &&
+  chainResolveOut.includes('RESOLVED') &&
+  chainResolveOut.includes(chainOpenRow.id || '#never#') &&
+  chainRowAfterResolve &&
+  typeof chainRowAfterResolve.resolvedAt === 'number' &&
+  chainRowAfterResolve.resolvedAt > 0,
+  'Chain hop 2: valid rewrite emits RESOLVED naming the id and resolves the ledger row'
+);
+
+// Hop 3: replaying the valid write must stay quiet — the resolution is not
+// re-announced (stale-replay suppression; count=0 → nothing emitted).
+const chainReplay = chainRunHook('scripts/unified-write-post.js', {
+  hook_event_name: 'PostToolUse',
+  tool_name: 'Write',
+  tool_input: { file_path: chainDocPath },
+  tool_response: 'File written',
+}, chainHookOpts);
+
+const chainReplayOut = JSON.stringify(chainReplay.stdout);
+
+// TC-HC-34: no duplicate RESOLVED on the replayed valid write.
+assert('TC-HC-34',
+  chainReplay.exitCode === 0 && !chainReplayOut.includes('RESOLVED'),
+  'Chain hop 3: replayed valid write is quiet (resolution not re-announced)'
+);
+
+// ============================================================
 // Summary
 // ============================================================
 console.log('\n========================================');

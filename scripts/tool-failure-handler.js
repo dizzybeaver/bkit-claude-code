@@ -14,6 +14,19 @@ const fs = require('fs');
 const path = require('path');
 const { readStdinSync, outputAllow, outputEmpty } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
+const eventLedger = require('../lib/core/event-ledger');
+
+// stale-replay-fix-1029: classifyFailure is exported for unit tests behind an
+// env gate so a bare require keeps the CLI stdin behavior identical. Placed
+// before the stdin read because the top-level main logic otherwise runs on
+// require; classifyFailure/extractExitCode are hoisted function declarations.
+if (
+  typeof module !== 'undefined' &&
+  module.exports !== undefined &&
+  process.env.BKIT_EXPORT_FOR_TESTS === '1'
+) {
+  module.exports = { classifyFailure, extractExitCode };
+}
 
 let input;
 try {
@@ -156,6 +169,34 @@ function classifyFailure(tool, error, input, toolResponse) {
 // rb006: pass the raw tool_response through so the exit-0 guard can see the code
 const toolResponse = input.tool_response || input.toolResponse || null;
 const classification = classifyFailure(toolName, errorMsg, toolInput, toolResponse);
+
+// Design Ref: §11.2 Module-1b — self-identifying failure envelope
+// FR-04: ledger rows only for actionable patterns; the two verified silent
+// arms (success_suppressed, benign_expected_failure) never open a row.
+const LEDGER_PATTERNS = new Set([
+  'exit_nonzero',
+  'timeout',
+  'disk_full',
+  'permission_denied',
+  'file_not_found',
+  'command_not_found',
+  'unknown',
+]);
+let event = null;
+if (LEDGER_PATTERNS.has(classification.pattern)) {
+  event = eventLedger.openEvent({
+    family: 'fail',
+    tool: toolName,
+    target: (toolInput && toolInput.command ? String(toolInput.command).slice(0, 60) : toolName),
+    detail: String(errorMsg).slice(0, 120),
+  });
+  // Plan FR-01: every emitted recovery line carries [bkit:evt:<id>] — the
+  // envelope rides EVERY pattern that opened a row, not only exit_nonzero
+  // (Act-1 gap 1). The two silent arms never reach here: they open no row.
+  if (event) {
+    classification.recovery += ` ${eventLedger.envelope(event)}`;
+  }
+}
 
 // Step 2: Record error pattern to PLUGIN_DATA learnings
 try {

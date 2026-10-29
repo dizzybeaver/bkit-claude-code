@@ -15,6 +15,16 @@ const { getActiveSkill, getActiveAgent } = require('../lib/task/context');
 const { lockedUpdate } = require('../lib/core/state-store');
 const { BKIT_VERSION } = require('../lib/core/version');
 
+// stale-replay-fix-1029 (Module-2b): event ledger resolve for Bash failure
+// notices. Lazy + guarded require: an unavailable ledger must fail-open
+// (design §6.1), never break the hook.
+let eventLedger = null;
+try { eventLedger = require('../lib/core/event-ledger'); } catch (_) { /* fail-open */ }
+
+// Optional end-of-hook advisory (see the resolve block in the audit section);
+// rides the single outputAllow payload so the hook stays one-message (§6.2).
+let hookNotice = '';
+
 // M10 fix (audit, rb031): the layer-6 auditPostHoc call below is intentionally
 // fire-and-forget (PostToolUse must not block tool flow), so it is not awaited.
 // A rejection that resolves AFTER the synchronous hook body completes would
@@ -125,6 +135,22 @@ try {
       : { outcome: result, exitCode },
     destructiveOperation: false
   });
+  // Design Ref: stale-replay-fix-1029 §5/§11.2 Module-2b — on a confirmed
+  // exit 0, retire open 'fail' events for this command. Target must mirror
+  // module-1 exactly: first 60 chars of input.tool_input.command. The announce
+  // names the superseded ids (HOS-16) via resolveEventsDetailed's
+  // { count, ids }. br010: the quiet path stays quiet — nothing is set when
+  // nothing resolved; the advisory rides the end-of-hook outputAllow payload
+  // (§6.2 single-payload).
+  if (result === 'success' && eventLedger) {
+    const detailed = eventLedger.resolveEventsDetailed('fail', {
+      tool: 'Bash',
+      target: command.slice(0, 60),
+    });
+    if (detailed && detailed.count > 0 && detailed.ids && detailed.ids.length > 0) {
+      hookNotice = `[bkit:evt:${detailed.ids.join(',')}] RESOLVED — Bash exit 0 at ${new Date().toISOString()}; earlier failure notices for this command are stale`;
+    }
+  }
 } catch (_) {}
 
 // v2.0.0: loop-breaker checkpoint after a Bash command completes.
@@ -236,6 +262,6 @@ try {
  * The layer-6 audit above does write its own entries through auditLogger, and
  * that part was always true. What was never true was the block-decision half.
  */
-outputAllow('', 'PostToolUse');
+outputAllow(hookNotice, 'PostToolUse');
 
 debugLog('UnifiedBashPost', 'Hook completed');

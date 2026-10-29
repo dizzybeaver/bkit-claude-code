@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — stale-replay-fix-1029 (2026-10-29): harness replay mitigation shipped
+
+Wave closing the stale-replay issue documented in **br878** — hook events
+already resolved by bkit are re-presented by the Claude Code harness on
+later turns (upstream anthropics/claude-code#103566), producing duplicate
+warnings/guidance long after the underlying condition cleared. Mitigation:
+a shared event ledger that records every actionable hook emission and
+announces its resolution, so replayed events are self-identifying and
+self-resolving. (No version number assigned here — maintainer-assigned at
+release.)
+
+- **New shared ledger — `lib/core/event-ledger.js`.** Hook-event ledger
+  with `openEvent` / `resolveEvents` / `resolveEventsDetailed` / envelope
+  helpers: 90-min TTL, 50-open-per-session and 200-total caps,
+  `CLAUDE_CODE_SESSION_ID` scoping, writes only via `lockedUpdate`,
+  fail-open on any ledger error (a ledger failure never blocks a hook),
+  and both-sides debugLog for observability.
+- **`scripts/tool-failure-handler.js` — failure events ledgered.** The 7
+  actionable failure patterns now open ledger rows, and every ledgered
+  recovery line carries a `[bkit:evt:<id>]` envelope (extending the rb033
+  self-identifying line). Test-only export is env-gated
+  (`BKIT_EXPORT_FOR_TESTS`).
+- **`scripts/unified-write-post.js` — template warnings enveloped.** PDCA
+  template-compliance warnings — which previously carried no id or
+  timestamp at all — now emit `[bkit:evt:tpl-…]` envelopes; a valid
+  re-validation announces `RESOLVED` in one line naming the superseded
+  ids.
+- **`scripts/unified-bash-post.js` — resolution on success.** A Bash
+  exit-0 resolves open failure events (60-char command-head matching) with
+  the same one-line `RESOLVED` announcement; quiet when nothing was open
+  (count=0).
+
+Tests: 2 new unit suites (`test/unit/event-ledger.test.js`,
+`test/unit/tool-failure-classification.test.js` incl. subprocess TF-12);
+HOS-13..17 contract extensions (`test/contract/hook-output-schema.test.js`);
+TC-HC-31..34 integration chain (`test/integration/hook-chain.test.js`).
+Battery 0 failures.
+
 ### Fixed — br-rb-wave-1027 (2026-10-27): rb006, br164, br165, br166 closed
 
 Wave cycle closing all four open reports:

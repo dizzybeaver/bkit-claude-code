@@ -20,6 +20,12 @@ const { validateDocument, formatValidationWarning } = require('../lib/pdca/templ
 const { lockedUpdate } = require('../lib/core/state-store');
 const { BKIT_VERSION } = require('../lib/core/version');
 
+// stale-replay-fix-1029 (Module-2): event ledger tagging for template warnings.
+// Lazy + guarded require: an unavailable ledger must fail-open (design §6.1),
+// never break the hook.
+let eventLedger = null;
+try { eventLedger = require('../lib/core/event-ledger'); } catch (_) { /* fail-open */ }
+
 // M10 fix (audit): the layer-6 auditPostHoc call below is intentionally
 // fire-and-forget (PostToolUse must not block tool flow), so it is not awaited.
 // A rejection that resolves AFTER the synchronous hook body completes would
@@ -204,19 +210,54 @@ if (activeAgent === 'qa-monitor') {
 }
 
 // v1.6.0 ENH-103: PDCA template validation
+// stale-replay-fix-1029 (Module-2): warnings open a 'tpl' ledger event and are
+// tagged with its envelope; a later valid validation resolves those events and
+// announces the retirement. Exactly one stdout payload per invocation (§6.2):
+// the warning branch exits after its own payload; the pass path's RESOLVED
+// notice rides the end-of-hook outputAllow via `hookNotice` (quiet when 0 —
+// br010). Fail-open everywhere: a missing/throwing ledger changes nothing.
+let hookNotice = '';
 if (filePath) {
+  const toolName = input.tool_name || 'Write';
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     const result = validateDocument(filePath, content);
 
     if (!result.valid && result.missing.length > 0) {
-      const warning = formatValidationWarning(result);
+      let warning = formatValidationWarning(result);
+      // Design Ref: stale-replay-fix-1029 §5/§11.2 Module-2 — tag the warning
+      // with a ledger envelope so a later pass can retire it as stale.
+      let event = null;
+      try {
+        event = eventLedger.openEvent({
+          family: 'tpl',
+          tool: toolName,
+          target: filePath,
+          detail: 'missing: ' + result.missing.join(', ').slice(0, 100),
+        });
+      } catch (_) { /* fail-open: warning still emits untagged */ }
+      if (event) {
+        warning = `${eventLedger.envelope(event)} (ts ${event.ts}): ${warning}`;
+      }
       debugLog('UnifiedWritePost', 'Template validation failed', {
         filePath, type: result.type, missing: result.missing
       });
       outputAllow(warning, 'PostToolUse');
       debugLog('UnifiedWritePost', 'Hook completed with template warning');
       process.exit(0);
+    }
+
+    // Design Ref: stale-replay-fix-1029 §5/§11.2 Module-2 — a valid template
+    // validation retires open events for this file; the announce names the
+    // superseded ids (HOS-14) via resolveEventsDetailed's { count, ids }.
+    if (result.valid) {
+      let detailed = null;
+      try {
+        detailed = eventLedger.resolveEventsDetailed('tpl', { tool: toolName, target: filePath });
+      } catch (_) { /* fail-open */ }
+      if (detailed && detailed.count > 0 && detailed.ids && detailed.ids.length > 0) {
+        hookNotice = `[bkit:evt:${detailed.ids.join(',')}] RESOLVED — ${path.basename(filePath)} now passes template validation at ${new Date().toISOString()}; earlier template warnings for this file are stale`;
+      }
     }
   } catch (e) {
     debugLog('UnifiedWritePost', 'Template validation error', { error: e.message });
@@ -295,7 +336,8 @@ try {
   }
 } catch (_) { /* graceful */ }
 
-// Output allow (PostToolUse doesn't block)
-outputAllow('', 'PostToolUse');
+// Output allow (PostToolUse doesn't block). hookNotice carries the optional
+// template RESOLVED announcement — still exactly one stdout payload (§6.2).
+outputAllow(hookNotice, 'PostToolUse');
 
 debugLog('UnifiedWritePost', 'Hook completed');
