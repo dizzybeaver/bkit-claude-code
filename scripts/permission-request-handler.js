@@ -14,14 +14,25 @@
  * @module scripts/permission-request-handler
  */
 
+const path = require('path');
 const { readStdinSync } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
 const { getAutomationLevel } = require('../lib/pdca/automation');
 const { normalizeMode } = require('../lib/domain/policy/permission-mode-policy');
+const {
+  normalizeForDenyMatch,
+  matchesDenyPattern,
+} = require('../lib/defense/deny-matching');
 
 // Safe bash command patterns (prefix match)
+//
+// Plan FR-03 (rb019 RB5-1): `node ` and `npm run` were removed — a prefix
+// allowlist cannot inspect arguments, and `node -e '<arbitrary JS>'` /
+// `npm run <any-script>` are arbitrary code execution. An allowlist that
+// cannot read argv must not contain interpreters; those commands now fall
+// through to behavior:null (human decides) at every level.
 const SAFE_BASH_PREFIXES = [
-  'node ', 'npm run', 'npm test', 'npm build',
+  'npm test', 'npm build',
   'cat ', 'ls ', 'find ', 'grep ', 'rg ',
   'git status', 'git log', 'git diff', 'git show', 'git branch',
   'echo ', 'head ', 'tail ', 'wc ',
@@ -69,7 +80,9 @@ try {
   input = readStdinSync();
 } catch (e) {
   debugLog('PermissionRequest', 'Failed to read stdin', { error: e.message });
-  // Return null decision (let user decide)
+  // Intentional fail-SAFE (contract ref rb019 INFO): an unreadable payload
+  // yields behavior:null — the human decides. This is the documented
+  // correct contrast to rb018's fail-open sibling gate. Do not change.
   console.log(JSON.stringify({ hookSpecificOutput: { decision: { behavior: null, updatedInput: null } } }));
   process.exit(0);
 }
@@ -104,11 +117,19 @@ const isL2Plus = autoLevel === 'semi-auto' || autoLevel === 'full-auto';
 
 /**
  * Check if a bash command matches always-deny patterns
+ *
+ * Plan FR-03 (rb019 RB5-6): the deny loop now matches through
+ * normalizeForDenyMatch + matchesDenyPattern (lib/defense/deny-matching),
+ * so multi-token patterns match as whole token sequences. `git push -f`
+ * at end-of-string — previously invisible behind the trailing-space
+ * literal `git push -f ` after .trim() — now hits the deny. Token-boundary
+ * semantics mean the fix does not widen the deny: `git push` alone and
+ * `git push -force` still fall through to the human.
  */
 function isDangerousBash(command) {
   if (!command || typeof command !== 'string') return false;
-  const cmd = command.toLowerCase().trim();
-  return ALWAYS_DENY_PATTERNS.some(p => cmd.includes(p));
+  const normalized = normalizeForDenyMatch(command);
+  return ALWAYS_DENY_PATTERNS.some(p => matchesDenyPattern(normalized, p));
 }
 
 /**
@@ -122,10 +143,27 @@ function isSafeBash(command) {
 
 /**
  * Check if a write/edit target is in a safe directory
+ *
+ * Plan FR-03 (rb019 RB5-2): the target is resolved against the project
+ * root (CLAUDE_PROJECT_DIR, falling back to process.cwd()) BEFORE the
+ * containment check. Raw-string startsWith/includes matched
+ * `docs/../../../INJECTED-evil.txt`, which normalizes to a write anywhere
+ * on disk. Absolute paths outside the root resolve to themselves and fail
+ * containment. isDocumentationTarget from lib/defense/deny-matching does
+ * not fit here — its dir set (docs/work/bug_reports) is the rb009
+ * exemption vocabulary, not this allowlist.
+ *
+ * @param {string} filePath - raw Write/Edit target from tool_input
+ * @returns {boolean}
  */
 function isSafeWriteTarget(filePath) {
   if (!filePath || typeof filePath !== 'string') return false;
-  return SAFE_WRITE_DIRS.some(d => filePath.startsWith(d) || filePath.includes(`/${d}`));
+  const projectRoot = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const resolved = path.resolve(projectRoot, filePath);
+  return SAFE_WRITE_DIRS.some((d) => {
+    const dirRoot = path.resolve(projectRoot, d);
+    return resolved === dirRoot || resolved.startsWith(dirRoot + path.sep);
+  });
 }
 
 // Make decision
