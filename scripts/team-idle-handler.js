@@ -67,7 +67,12 @@ function main() {
     return;
   }
 
-  const teammateId = hookContext.teammate_id || hookContext.agent_id || 'unknown';
+  // Plan FR-09 (rb038, wave1028 module-7): a payload with no teammate/agent id
+  // has no roster row to update. The old 'unknown' fallback wrote ghost 'idle'
+  // rows and ran queue transitions for a teammate that does not exist — skip
+  // the team-state writes instead and say so in the response.
+  const rawTeammateId = hookContext.teammate_id || hookContext.agent_id || null;
+  const teammateId = rawTeammateId || 'unknown';
 
   // v1.5.9: ENH-74 explicit agent_id/agent_type extraction
   const agentId = hookContext.agent_id || teammateId;
@@ -80,38 +85,41 @@ function main() {
     primaryFeature: pdcaStatus?.primaryFeature
   });
 
-  // Use handleTeammateIdle for task-queue integration
-  const idleResult = teamModule.handleTeammateIdle(teammateId, pdcaStatus);
+  // Use handleTeammateIdle for task-queue integration (identified teammates
+  // only — Plan FR-09/rb038)
+  const idleResult = rawTeammateId
+    ? teamModule.handleTeammateIdle(rawTeammateId, pdcaStatus)
+    : null;
 
   // State writer: record idle status (v1.5.3 Team Visibility)
   try {
-    if (teamModule.updateTeammateStatus) {
-      teamModule.updateTeammateStatus(teammateId, 'idle', null);
+    if (rawTeammateId && teamModule.updateTeammateStatus) {
+      teamModule.updateTeammateStatus(rawTeammateId, 'idle', null);
     }
   } catch (e) {
     debugLog('TeammateIdle', 'State write failed (non-fatal)', { error: e.message });
   }
 
+  // Plan FR-09 (rb038): hookSpecificOutput here was inert — TeammateIdle is
+  // not in CONTEXT_CHANNEL_EVENTS and the event documents no
+  // additionalContext channel, so the nested assignment/idle text was never
+  // read. Dropped; the meaningful fields (nextTask, ids) stay top-level.
+  // ENH-75 continuation: continue:false now carries the stopReason it always
+  // required — a bare continue:false with no reason gave the runtime nothing
+  // to show the teammate.
   const response = {
     systemMessage: `Teammate ${teammateId} is idle`,
-    // v1.5.9: ENH-75 stop teammate when no next task available
-    continue: idleResult?.nextTask ? undefined : false,
-    hookSpecificOutput: {
-      hookEventName: "TeammateIdle",
-      teammateId: teammateId,
-      agentId,
-      agentType,
-      nextTask: idleResult?.nextTask || null,
-      additionalContext: idleResult?.nextTask
-        ? `\n## Teammate Work Assignment\n` +
-          `Assigned: ${idleResult.nextTask.subject}\n` +
-          `Feature: ${idleResult.feature}\n` +
-          `Phase: ${idleResult.currentPhase}\n`
-        : `\n## Teammate Idle\n` +
-          `No pending tasks for ${teammateId}.\n` +
-          `Waiting for phase transition.\n`
-    }
+    teammateId,
+    agentId,
+    agentType,
+    nextTask: idleResult?.nextTask || null,
   };
+  if (!idleResult?.nextTask) {
+    response.continue = false;
+    response.stopReason = rawTeammateId
+      ? 'No pending tasks for this teammate'
+      : 'TeammateIdle payload carried no teammate id; team state not updated';
+  }
 
   console.log(JSON.stringify(response));
   process.exit(0);

@@ -38,7 +38,24 @@ let input;
 try {
   input = readStdinSync();
 } catch (e) {
+  // Plan FR-07 (rb027): a stdin failure means the change payload is lost and
+  // can never be audited. Emit an explicit unaudited row (outcome vocabulary —
+  // not a block, not a success) before exiting, instead of exiting silently
+  // as if no change had occurred.
   debugLog('ConfigChange', 'Failed to read stdin', { error: e.message });
+  try {
+    const { writeAuditLog } = require('../lib/audit/audit-logger');
+    writeAuditLog({
+      actor: 'hook',
+      actorId: 'config-change-handler',
+      action: 'config_changed',
+      category: 'config',
+      target: 'unknown',
+      targetType: 'config',
+      details: { reason: 'stdin read failed; change payload never captured' },
+      result: 'unaudited',
+    });
+  } catch (_) { /* non-critical */ }
   outputEmpty();
   process.exit(0);
 }
@@ -48,66 +65,77 @@ const filePath = input.file_path || input.filePath || '';
 
 debugLog('ConfigChange', 'Hook started', { source, filePath });
 
-// Step 1: Log config change to audit
+// Plan FR-07 (rb027): single-snapshot read. The old flow audited the change
+// first and then RE-READ the file for the pattern scan, so the audited row and
+// the scanned bytes could be two different versions of the file (TOCTOU).
+// Read once; detection and audit both cite this snapshot.
+let content = null;
+let readError = null;
+try {
+  if (filePath && fs.existsSync(filePath)) {
+    content = fs.readFileSync(filePath, 'utf8');
+  }
+} catch (e) {
+  readError = e.message;
+  debugLog('ConfigChange', 'Config file read failed', { filePath, error: e.message });
+}
+
+// Plan FR-07 (rb027): substring includes() matched these tokens inside prose
+// and inside longer identifiers (e.g. "chmod 7770", a doc sentence quoting
+// "chmod 777"). Word-boundary regexes match the real tokens only.
+const DANGEROUS_PATTERN_RES = DANGEROUS_PATTERNS.map((pattern) => ({
+  pattern,
+  regex: new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`),
+}));
+
+const dangers = [];
+if (content !== null) {
+  for (const { pattern, regex } of DANGEROUS_PATTERN_RES) {
+    if (regex.test(content)) {
+      dangers.push(pattern);
+    }
+  }
+}
+
+if (dangers.length > 0) {
+  debugLog('ConfigChange', 'SECURITY WARNING: Dangerous config detected', {
+    patterns: dangers,
+    filePath,
+  });
+}
+
+// Step 1: single audit row for the change.
+//
+// Plan FR-07 (rb027): this is a NON-BLOCKING hook — ConfigChange has no deny
+// path and this handler always exits 0 — so the old warning row (action
+// 'destructive_blocked', result 'blocked', destructiveOperation, blastRadius
+// high) recorded a block that never happened. Outcome vocabulary:
+// 'annotated' when dangerous patterns were found, 'observed' otherwise;
+// blocking claims belong to channels that can actually block.
 try {
   const { writeAuditLog } = require('../lib/audit/audit-logger');
   writeAuditLog({
-    actor: 'system',
+    actor: 'hook',
     actorId: 'config-change-handler',
-    action: 'config_changed',
+    action: dangers.length > 0 ? 'dangerous_config_annotated' : 'config_changed',
     category: 'config',
-    target: source || filePath || 'unknown',
+    target: filePath || source || 'unknown',
     targetType: 'config',
-    details: { source, filePath },
-    result: 'success',
+    details: {
+      source,
+      filePath,
+      dangerousPatterns: dangers,
+      patternScan: content !== null ? 'performed' : 'skipped',
+      ...(readError ? { readError } : {}),
+    },
+    result: dangers.length > 0 ? 'annotated' : 'observed',
+    ...(dangers.length > 0
+      ? { reason: `Dangerous config patterns found: ${dangers.join(', ')}` }
+      : {}),
   });
   debugLog('ConfigChange', 'Audit log written');
 } catch (e) {
   debugLog('ConfigChange', 'Audit write failed (non-critical)', { error: e.message });
-}
-
-// Step 2: Check for dangerous permission changes
-try {
-  if (filePath && fs.existsSync(filePath)) {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const dangers = [];
-
-    for (const pattern of DANGEROUS_PATTERNS) {
-      if (content.includes(pattern)) {
-        dangers.push(pattern);
-      }
-    }
-
-    if (dangers.length > 0) {
-      debugLog('ConfigChange', 'SECURITY WARNING: Dangerous config detected', {
-        patterns: dangers,
-        filePath,
-      });
-
-      // Write security warning to audit
-      try {
-        const { writeAuditLog } = require('../lib/audit/audit-logger');
-        writeAuditLog({
-          actor: 'hook',
-          actorId: 'config-change-handler',
-          action: 'destructive_blocked',
-          category: 'control',
-          target: filePath,
-          targetType: 'config',
-          details: {
-            event: 'dangerous_config_detected',
-            patterns: dangers,
-          },
-          result: 'blocked',
-          reason: `Dangerous config patterns found: ${dangers.join(', ')}`,
-          destructiveOperation: true,
-          blastRadius: 'high',
-        });
-      } catch (_) { /* non-critical */ }
-    }
-  }
-} catch (e) {
-  debugLog('ConfigChange', 'Security check failed (non-critical)', { error: e.message });
 }
 
 debugLog('ConfigChange', 'Hook completed', { source, filePath });

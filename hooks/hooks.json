@@ -1,5 +1,5 @@
 {
-  "description": "bkit Vibecoding Kit v2.1.40 - Claude Code. IMPORTANT: `timeout` is in SECONDS (Claude Code default 600 for command hooks). Values here were 1000x too large through v2.1.33 — a declared 10000 meant 2h46m, not 10s, which is why a hung Stop hook could stall a session for ~15 minutes (issue #139) without ever being cancelled. Verified empirically: a 5s hook survives `timeout: 30` and is killed at 2.26s under `timeout: 2`. Also: `if` holds exactly ONE permission rule (no `|` alternation) and is evaluated only on PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest/PermissionDenied; `once` is honoured only in skill frontmatter and is ignored here. See test/contract/hooks-config-contract.test.js, which fails if any of these invariants regress.",
+  "description": "bkit Vibecoding Kit v2.1.40 - Claude Code. IMPORTANT: `timeout` is in SECONDS (Claude Code default 600 for command hooks). Values here were 1000x too large through v2.1.33 — a declared 10000 meant 2h46m, not 10s, which is why a hung Stop hook could stall a session for ~15 minutes (issue #139) without ever being cancelled. Verified empirically: a 5s hook survives `timeout: 30` and is killed at 2.26s under `timeout: 2`. Also: `if` holds exactly ONE permission rule (no `|` alternation) and is evaluated only on PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest/PermissionDenied; `once` is honoured only in skill frontmatter and is ignored here. See test/contract/hooks-config-contract.test.js, which fails if any of these invariants regress. rb042 (wave1028 module-7): the PreCompact/ConfigChange/Notification matcher alternations (auto|manual, project_settings|skills, permission_prompt|idle_prompt) were dead filters — these events have no matcher support, so a matcher here is silently ignored (see HC-MATCHER in test/contract/hooks-config-contract.test.js). The matchers were removed; the handlers fire on every payload of their event and already no-op on irrelevant ones (source/type checked inside the handler), which is a safe superset of the old intent.",
   "hooks": {
     "SessionStart": [
       {
@@ -136,7 +136,6 @@
     ],
     "PreCompact": [
       {
-        "matcher": "auto|manual",
         "hooks": [
           {
             "type": "command",
@@ -237,7 +236,6 @@
     ],
     "ConfigChange": [
       {
-        "matcher": "project_settings|skills",
         "hooks": [
           {
             "type": "command",
@@ -261,7 +259,6 @@
     ],
     "Notification": [
       {
-        "matcher": "permission_prompt|idle_prompt",
         "hooks": [
           {
             "type": "command",

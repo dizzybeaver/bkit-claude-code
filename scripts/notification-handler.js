@@ -10,7 +10,7 @@
  * @module scripts/notification-handler
  */
 
-const { readStdinSync, outputAllow, outputEmpty } = require('../lib/core/io');
+const { readStdinSync, outputEmpty } = require('../lib/core/io');
 const { debugLog } = require('../lib/core/debug');
 const { getPdcaStatusFull } = require('../lib/pdca/status');
 
@@ -61,14 +61,16 @@ if (notificationType === 'idle_prompt' && _notifAdv('hooks.advisory.pdcaStatusEc
     const fragments = [];
 
     if (pdcaStatus) {
-      const feature = pdcaStatus.feature || pdcaStatus.featureName || 'none';
-      // v2.1.34: `currentPhase` is a v1 schema key and always undefined, so this
-      // fallback chain ended at 'none'. The phase lives on the feature entry.
-      const phase = pdcaStatus.phase
-        || (pdcaStatus.primaryFeature && pdcaStatus.features
-          && pdcaStatus.features[pdcaStatus.primaryFeature]
-          && pdcaStatus.features[pdcaStatus.primaryFeature].phase)
-        || 'none';
+      // Plan FR-08 (rb035, wave1028 module-7): `feature`/`featureName` are dead
+      // v1 registry keys — the v2.1.34 migration moved the identity onto
+      // primaryFeature and the phase onto the feature row. Same accessor
+      // cwd-changed-handler migrated to (rb029); the old chain always read
+      // 'none'.
+      const feature = pdcaStatus.primaryFeature || 'none';
+      const featureRow = pdcaStatus.primaryFeature && pdcaStatus.features
+        ? pdcaStatus.features[pdcaStatus.primaryFeature]
+        : null;
+      const phase = (featureRow && featureRow.phase) || 'none';
       const progress = pdcaStatus.progress || 'unknown';
       fragments.push(`PDCA: feature="${feature}", phase=${phase}, progress=${progress}`);
       debugLog('Notification', 'PDCA context enriched', { feature, phase });
@@ -100,7 +102,12 @@ if (notificationType === 'idle_prompt' && _notifAdv('hooks.advisory.pdcaStatusEc
 
     if (fragments.length > 0) {
       const context = fragments.join('. ') + '. Resume work or run /pdca status or /sprint list for details.';
-      outputAllow(context, 'Notification');
+      // Plan FR-08 (rb035): outputAllow(context, 'Notification') was inert —
+      // 'Notification' has no entry in CONTEXT_CHANNEL_EVENTS, so the message
+      // fell through to the not-delivered branch while the call looked like
+      // delivery. Notification documents no additionalContext channel, so the
+      // honest route is the debug log; the enrichment stays available there.
+      debugLog('Notification', 'PDCA/Sprint context enriched (debug-only: Notification has no model-visible channel)', { context });
       process.exit(0);
     }
   } catch (e) {
