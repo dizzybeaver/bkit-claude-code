@@ -7,679 +7,222 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — stale-replay-fix-1029 (2026-10-29): harness replay mitigation shipped
+No version numbers assigned — the maintainer assigns them at release.
 
-Wave closing the stale-replay issue documented in **br878** — hook events
-already resolved by bkit are re-presented by the Claude Code harness on
-later turns (upstream anthropics/claude-code#103566), producing duplicate
-warnings/guidance long after the underlying condition cleared. Mitigation:
-a shared event ledger that records every actionable hook emission and
-announces its resolution, so replayed events are self-identifying and
-self-resolving. (No version number assigned here — maintainer-assigned at
-release.)
+### Fixed — stale replay mitigation (2026-10-29)
 
-- **New shared ledger — `lib/core/event-ledger.js`.** Hook-event ledger
-  with `openEvent` / `resolveEvents` / `resolveEventsDetailed` / envelope
-  helpers: 90-min TTL, 50-open-per-session and 200-total caps,
-  `CLAUDE_CODE_SESSION_ID` scoping, writes only via `lockedUpdate`,
-  fail-open on any ledger error (a ledger failure never blocks a hook),
-  and both-sides debugLog for observability.
-- **`scripts/tool-failure-handler.js` — failure events ledgered.** The 7
-  actionable failure patterns now open ledger rows, and every ledgered
-  recovery line carries a `[bkit:evt:<id>]` envelope (extending the rb033
-  self-identifying line). Test-only export is env-gated
-  (`BKIT_EXPORT_FOR_TESTS`).
-- **`scripts/unified-write-post.js` — template warnings enveloped.** PDCA
-  template-compliance warnings — which previously carried no id or
-  timestamp at all — now emit `[bkit:evt:tpl-…]` envelopes; a valid
-  re-validation announces `RESOLVED` in one line naming the superseded
-  ids.
-- **`scripts/unified-bash-post.js` — resolution on success.** A Bash
-  exit-0 resolves open failure events (60-char command-head matching) with
-  the same one-line `RESOLVED` announcement; quiet when nothing was open
-  (count=0).
+Hook events already resolved by bkit were re-presented by the Claude Code
+harness on later turns, producing duplicate warnings long after the
+underlying condition cleared (upstream anthropics/claude-code#103566).
+Actionable hook emissions are now self-identifying and self-resolving:
 
-Tests: 2 new unit suites (`test/unit/event-ledger.test.js`,
-`test/unit/tool-failure-classification.test.js` incl. subprocess TF-12);
-HOS-13..17 contract extensions (`test/contract/hook-output-schema.test.js`);
-TC-HC-31..34 integration chain (`test/integration/hook-chain.test.js`).
-Battery 0 failures.
+- New shared event ledger (`lib/core/event-ledger.js`): 90-min TTL,
+  per-session and total caps, session-id scoping, locked writes, fail-open
+  on any ledger error (a ledger failure never blocks a hook).
+- Tool-failure and template-warning emissions carry `[bkit:evt:<id>]`
+  envelopes; a later success or re-validation announces `RESOLVED` in one
+  line naming the superseded ids.
+- Tests: 2 new unit suites, hook-output-schema and hook-chain contract
+  extensions. Battery 0 failures.
 
-### Fixed — br-rb-wave-1027 (2026-10-27): rb006, br164, br165, br166 closed
+### Fixed — hook audit wave (2026-10-28)
 
-Wave cycle closing all four open reports:
+All 38 open hook-layer findings closed across 8 fix modules:
 
-- **rb006 — exit-0 commands labeled "non-zero failures."**
-  `scripts/tool-failure-handler.js` now extracts the real exit code from the
-  error payload (`/exit (?:code|status)[:\s]*(\d+)/i` or `tool_response`)
-  before classifying: code 0 emits no failure guidance
-  (`success_suppressed`, debugLog-trailed); non-zero or code-less payloads
-  keep today's behavior. Plus a raw-input triage debugLog so the next live
-  firing records the true payload shape.
-- **br164/br166 — full arg string registered as PDCA feature key.**
-  `lib/orchestrator/skill-invocation-effects.js` normalizes
-  `invocationArgs.feature` once at intake (first whitespace token, routed
-  through `lib/pdca/validate-name.js`): `plan myfeature — prose notes`
-  now keys ONE clean `myfeature` entry instead of stranding an orphan key
-  per phase (archive E-ARCH-NOTFOUND class). Clean single-token fires are
-  byte-identical.
-- **br165 — G-010b blocked markdown writes over SQL-shaped prose.**
-  `lib/control/destructive-detector.js` G-010b gains a determiner guard
-  (`(?!the|a|an|this|that|these|those|my|our|your|its)\b` after FROM):
-  "create/delete from the dashboard" no longer fires; unscoped
-  `DELETE FROM audit_log;` still does. Third live specimen during the
-  cycle: the wave's own probe file was denied on a `.js` Write for
-  carrying the fixture strings — fixed probe-side via concatenated
-  fixtures.
+- Stdin parse/schema failures now fail CLOSED at the Bash and Stop gates.
+- Directive caches bind to CLAUDE.md mtime+hash and void on source
+  absence, closing the forged-directive chain.
+- Interpreter prefixes removed from the permission allowlist; write
+  exemptions are containment-resolved.
+- The active-skill marker and skill recordings carry session identity;
+  `pdca-post-write.js` restored.
+- Self-identifying tool-failure context plus a benign-failure arm;
+  boundary-based deny matching (`lib/defense/deny-matching.js`).
+- Truthful audit vocabulary and registered output channels;
+  stale-schema/cwd migration and a deny-biased janitor; contract
+  cleanups.
+- Tests: pre-write pipeline registry isolation and status-split export
+  counts; HIS-17/18/20 updated to the new contract. Docs: lib 210 /
+  Scripts 65.
 
-- **br167 — matchRate never recorded on gap-detector completions.**
-  Root cause: the br162 SubagentStop bridge's feature extraction returned
-  null on real reports (backtick-quoted feature names; the report names the
-  feature only in "Next: /pdca report <key>"), so `recordAnalysisMetrics`
-  denied E-UNKNOWN-FEATURE with a debugLog-only invisible deny — zero
-  writes (rb005 archived with matchRate null via the docs gate, masking
-  it). Fix: `scripts/gap-detector-stop.js` backtick-tolerant patterns +
-  no-clobber of an existing higher rate; `scripts/subagent-stop-handler.js`
-  dispatch-prompt binding with resolution order report → dispatch prompt →
-  primaryFeature and a stderr line on denied records.
-- **br168 — G-020 denied read-only git history over registry pathspecs.**
-  `git log -- .bkit/state/pdca-status.json` tripped the registry-write
-  rule. G-020 gains `suppressIf: isReadonlyGitHistory`: read-only git
-  plumbing verbs stand down; any non-devnull redirect or
-  tee/cp/mv/rm/editor verb re-arms the rule — a read may not smuggle a
-  write (write-path targets unaffected).
+### Fixed — exit-code and registry-intake wave (2026-10-27)
 
-Probes `tools/brfix-wave-probes/wave1027_probes.js` 14/14 (T12 br167
-rate-recording + no-clobber, T13/T14 br168 both directions); targeted
-suites green (detector family ×7, skill-invocation-effects,
-ownership-br155, guardrail precision, destructive-bypass,
-destructive-rules, br162 dispatch); battery `test/run-all-tests.sh`
-exit 0, 0 failed.
+- **Exit-0 commands labeled "non-zero failures".** The tool-failure
+  classifier now extracts the real exit code before classifying; exit 0
+  emits no failure guidance.
+- **Full argument string registered as a PDCA feature key.** Invocation
+  args are normalized once at intake to a clean single-token feature
+  name, ending orphan registry keys stranded per phase.
+- **Markdown writes denied over SQL-shaped prose.** The unscoped-DELETE
+  rule gains a determiner guard: "create/delete from the dashboard" no
+  longer fires; an unscoped `DELETE FROM audit_log;` still does.
+- **Match rate never recorded on dispatched gap-detector completions.**
+  Feature extraction is backtick-tolerant with a report → dispatch-prompt
+  resolution order; denied records surface on stderr.
+- **Read-only git history denied over registry pathspecs.** Read-only
+  git plumbing verbs stand down from the registry-write rule; any
+  redirect or write verb re-arms it — a read may not smuggle a write.
+- **Cross-session Stop-hook bleed silenced.** Phase-derived acks for a
+  cycle owned by another session are suppressed instead of blocking;
+  pure acks never block (directive-bearing guidance still does). Owner
+  full-auto behavior is byte-identical.
 
-### Fixed — rb005 (2026-10-27): cross-session Stop-hook bleed silenced
+### Fixed — analyzer dispatch bridge + detector windows (2026-10-25)
 
-Two channel-discipline gates in `scripts/pdca-skill-stop.js`:
+- **Dispatched analyzers never recorded metrics.** A SubagentStop bridge
+  parses agent transcript tails and records gap-detector/code-analyzer
+  metrics automatically; non-analyzer stops stay byte-identical (suite
+  16/16 with a golden byte-compare against pre-change output).
+- **`;` defeated the write-window detector.** A semicolon inside a
+  quoted interpreter payload (`python3 -c "import shutil; ..."`) no
+  longer bypasses sandbox-write detection (suite 10/10,
+  mutation-verified). General Bash-window `;` semantics deferred as a
+  separate decision.
+- **PDCA hook-policy resolution loop closed** across five cycles (match
+  rates 95.8-100%): registry lifecycle and session isolation (locked
+  read-modify-write, creation-only owner stamping, evidence-gated
+  ownership, gate-routed Stop emitters); the terminal-state model
+  (archived/completed exits rejected, dead edges removed);
+  scoped-feature gates no longer silently dropping writes;
+  underscore-token server-error classification; sanctioned
+  dispatched-analyzer metric recording; quoted-payload live-write
+  escapes closed with mutation-verified regression suites.
 
-- **FR-01 — foreign phase-derived acks suppressed.** When a Stop's action
-  was derived from the shared registry phase (`actionSource === 'phase'`,
-  no envelope/text binding) and the feature's live `ownerSession` belongs
-  to a different session, the handler now exits allow after one stderr
-  note — reusing the br143 `evaluateSessionGate` verdict — instead of
-  emitting `✅ Implementation guide has been provided.` on the blocking
-  channel for a cycle it does not own (rb005: 8 consecutive foreign
-  blocks observed 2026-10-26).
-- **FR-02 — pure acks never block.** Guidance carrying no
-  `[AUTO-TRANSITION]` / `[PDCA-COMPLETE]` directive is downgraded to
-  allow + stderr (manual-mode acks forced a spurious extra turn ever
-  since the S6 surface dropped `userPrompt`); directive-bearing guidance
-  still blocks. Owner full-auto behavior is byte-identical.
+### Fixed — advisory gating + scope limiter (2026-10-23)
 
-Probes `tools/brfix-wave-probes/rb005_probes.js` 6/6 (foreign suppressed,
-owner retained, manual downgrade, directive retained, syntax,
-lease-expiry); targeted suites green (session-activity-gate 24/24,
-stop-handler-extraction 28/28, stale-evidence 15/15, v2122 output
-schema, ownership-br155, stop-report-completion); battery
-`test/run-all-tests.sh` exit 0, 0 failed.
+- Advisory gating extended to all remaining context injectors
+  (session-context startup sections, the fork-mode advisory, and
+  dashboard/cwd/PDCA-status/size/scope advisories) behind
+  `bkit.config.json` `hooks.advisory`, default silent; functional
+  emitters remain ungated.
+- `rm -rf "$T"` where the same command assigns `T=$(mktemp -d)` is a
+  narrow, known target — no longer an unresolved broad-delete operand.
 
-### Fixed — br162/br163 (2026-10-25): SubagentStop analyzer dispatch bridge, G-019 semicolon-window closure
+### Fixed — Stop-hook session isolation + noise gating (2026-10-18)
 
-Two boundary reports closing the hook-policy loop:
+- **Fail-closed session gate** (`lib/pdca/session-activity-gate.js`):
+  auto-transition demands no longer inject into sessions with zero bkit
+  activity; legacy/unowned registry entries are permanently withheld.
+  Mutation-verified.
+- **Session-scoped stale-evidence gate**: candidate set scoped
+  owner-only; chain-top passthrough for sessions owning no
+  transitionable feature; two swallowed ReferenceErrors repaired.
+- **Config-gated advisory-only emitters** (classifier envelope,
+  feature-detector misfires, pure-ack receipts, fork-mode advisory), all
+  default FALSE — eliminated per-turn noise and restored prompt-prefix
+  caching. Strict `true` restores each injection byte-equivalently.
+- **Remember-plugin SessionStart injection capped at 2048B** with
+  now.md priority, content-hash dedup, fail-open on state errors;
+  mutation-verified in both directions.
 
-- **br162 — dispatched analyzers never recorded metrics.** New dispatch
-  bridge in `scripts/subagent-stop-handler.js`: `ANALYZER_TYPES` 4-form
-  O(1) gate, `_extractAnalyzerReport` transcript-tail scan, and
-  `dispatchAnalyzerMetrics` reusing the br159 parse/record surfaces
-  read-only. Agent-tool-dispatched gap-detector/code-analyzer
-  completions now record metrics automatically (br159's pinned upstream
-  limitation retires); non-analyzer stops stay byte-identical. Suite
-  `test/unit/subagent-dispatch-br162.test.js` 16/16 (stash red→green,
-  golden byte-compare vs pre-change output, end-to-end child runs).
-- **br163 — `;` defeated the G-019 write window.** New
-  `isSemicolonSpanningPayloadWrite` predicate + G-019-only arm in
-  `lib/control/destructive-detector.js`: a semicolon inside a quoted
-  interpreter payload (`python3 -c "import shutil; shutil.copy(...)"`)
-  no longer defeats broker-state write detection. Suite
-  `test/unit/detector-br163.test.js` 10/10 (red 3/10 pre-fix,
-  mutation-verified; sandbox-composition and dest-position laundering
-  guards exceed the design minimum). General Bash-window `;` semantics
-  (br102) deferred out of scope as a separate decision.
+### Fixed — stale evidence, advisories, checkpoint ids (2026-10-14)
 
-Testing: jest 153/153; metrics-br159 16/16; br148/br156/br160 suites
-green. Cycle docs archived to `docs/archive/2026-10/`.
+- The stale-evidence gate resolves its candidate set from every registry
+  feature in a transitionable phase instead of the primary feature
+  alone, so full evidence on disk is no longer withheld.
+- UserPromptSubmit advisories (agent/skill suggestions, ambiguity
+  scores, template dumps) now require a non-terminal feature active
+  within the last 6 hours — idle sessions get silence.
+- Checkpoint ids retry with a `-n` suffix instead of colliding when two
+  are created in the same millisecond.
 
-### Fixed — PDCA hook-policy resolution loop (2026-10-25): br047, br150–br156, br159, br160, br161
+### Fixed — detector precision, scope limiter, docs gate (2026-10-10)
 
-Day-long bug-resolution loop closed across five cycles (match rates
-95.8–100%):
+- **Read-exemption at the state-write seam**: `cp`/`mv` reading state
+  paths and interpreter read-calls no longer trip the sandbox-write
+  rule; any write form anywhere still denies.
+- **Historical doc-evidence archival**: a dry-run-default archive tool
+  moved ~105 phantom features (~218 files, 9 doc-location variants) out
+  of the active registry — 78 -> 0.
+- **Scope-limiter spurious L0 advisories eliminated** (`tests/**` and
+  root `*.md` added to the moderate tier); registry junk rows removed
+  through sanctioned APIs only.
+- **Stale test contracts aligned** with shipped contracts (io split
+  module tags, lib module counts, MCP-port registry, export-compat
+  ranges for deliberate additive growth, detector-semantics
+  assertions).
+- **Audit tail**: measure-gate trust fallback aligned, jest phantom
+  testMatch pruned, dead audit script deleted, `test/perf/`
+  consolidated, docs-drift cluster closed.
+- **Fence-mode vault scanning for the Docs=Code gate**: authoritative
+  declaration blocks are fenced in vault docs; a mutation probe makes
+  the gate exit non-zero naming the drifted file. Closes the docs-drift
+  exposure that shipped ~140 stale vault references with green CI.
 
-- **Registry lifecycle + session isolation (br150/br151/br152/br155).**
-  Doc-lookup error classes, pre-write name validation with slugified
-  paths, skip-and-flag readers, E-TERMINAL-WRITE refusal, phase-matched
-  disposal, creation-only `ownerSession` stamp at the row-creation
-  chokepoint, evidence-gated ownership claim, and gate-routed Stop
-  emitters (two bypasses closed). Extra in-wave work: br157 `(X++)`
-  set-e runner trap fixed (battery EXIT=0 for the first time since
-  2026-10-12); br158 feature-manager suite registry leak sandboxed.
-  jest 153/153, battery 79 modules green, live registry stale rows
-  6 → 0; matchRate 95.8 (gate-passed).
-- **br154 — underscore-token server_error.** One additive condition in
-  `classifyError`'s server-error branch; live probe returns
-  `{category: server_error, severity: medium}`. jest 153/153;
-  matchRate 100.
-- **br159 — dispatched-analyzer metric recording.** New sanctioned
-  `recordAnalysisMetrics` entry (the harness-side gap — SubagentStop
-  never dispatching to analysis handlers — pinned and documented, later
-  closed by br162); fabricated analysis-stop baselines removed
-  (measured values only); registry warning triad converted (terminal
-  dup guard, observable requireDocs-skip return, enforceFeatureLimit).
-  Live dogfood matchRate 91.2 recorded via the entry; 91.2 → 96% PASS.
-- **br047/br153/br156 (99% cycle) + in-cycle br160/br161.** br047
-  scanner stale-read closed as cache-drift-fixed with a
-  both-direction regression test; br153 owner-only pre-write advisory
-  suppression via the session-activity gate (`scripts/pre-write.js`);
-  br156 G-019 sanctioned-shape advisory text + dual-condition sandbox
-  downgrade with laundering guards; br160 quoted-payload live-write
-  escape (keep-whole write-call detection, 10/10 mutation-verified);
-  br161 five stale pdcaGuidance tests aligned to the br146 contract
-  (42/42).
+### Fixed — evidence-gated auto-transition + intake validation (2026-10-09)
 
-Testing: jest 153/153 across all cycles; cycle docs archived to
-`docs/archive/2026-10/`.
+- **Bookkeeping-only phase transitions**: the AUTO-TRANSITION emit is
+  withheld on the pause flag, on in-flight background work, on an active
+  specialist agent, and when the feature's current phase has an empty
+  doc set — no artifact, no transition.
+- **`/pdca pause | resume` verbs** write/remove the pause flag
+  sanctionedly, above the gate they silence.
+- **Junk feature names from free-text skill args**: a name validator at
+  all three intake points rejects full-sentence feature names;
+  orphan-row cleanup purges legacy junk via sanctioned APIs (a
+  follow-up wave delivered the deferred cleanup, pause/resume, and
+  doc-set gating).
 
-### Fixed — advisory gating expansion + scope-limiter precision (2026-10-23): br145, br146, br147
+### Fixed — registry write integrity wave (October 2026)
 
-- **br146/br147 — advisory gating extended to all remaining context
-  injectors.** The br144 `hooks.advisory` config gate (default false =
-  silent, strict true = inject) now covers session-context startup
-  sections, the fork-mode CC advisory (the second emitter of the same
-  advisory br144 gated), and dashboard/cwd/PDCA-status/size/scope
-  advisories across session-start, cwd-changed, notification, and
-  pre-write handlers. Functional emitters remain ungated. Adds the
-  Plugin Cache Sync section to project CLAUDE.md.
-- **br145 — locally-defined variable targets.** `rm -rf "$T"` where the
-  same command assigns `T=$(mktemp -d)` is a narrow, known target —
-  no longer classified as an unresolved broad-delete operand; full
-  command text threaded through severity classification.
+- `pdca-status` and quality-metrics writers use locked
+  read-modify-write, closing lost-update races between concurrent Stop
+  handlers; write failures report loudly instead of silently
+  succeeding.
+- `completed` is terminal; the state machine rejects archived/completed
+  exits and drops dead edges.
+- The requireDocs gate no longer silently drops writes; the archive CLI
+  resolves scope-parent docs and moves every bilingual phase-document
+  variant (bilingual cycles no longer strand a sibling).
+- An `ownerSession` lease guards the AUTO-TRANSITION emit so a foreign
+  session cannot advance another's feature; check-phase completion
+  demands real evidence (analysis doc or matchRate), not bare prose.
 
-### Fixed — Stop-hook session isolation + advisory noise gating (2026-10-18): br138, br139, br143, br144
+### Fixed — Stop-handler completion-state hardening
 
-- **br143 — fail-closed session gate.** Cross-session context
-  poisoning: AUTO-TRANSITION demands were injected into sessions with
-  zero bkit activity because the transition gate failed open. New
-  shared `lib/pdca/session-activity-gate.js` (fail-closed verdict
-  table); legacy/unowned registry entries permanently withheld
-  (operator ruling); gate (e) appended to the unified-stop skip chain.
-  24 contract tests, mutation-verified (re-introduced fail-open goes
-  RED). Battery 5365 TC / 0 FAIL.
-- **br138 — session-scoped stale-evidence gate.** Gate (d) evaluated a
-  global registry candidate set, tripping idle sessions on registry
-  residue. Chain-top passthrough for sessions owning no transitionable
-  feature; candidate set scoped owner-only; two swallowed
-  ReferenceErrors that had silently disabled stale-evidence withholding
-  repaired. 15 tests; compound mutation RED 12/15 → restored GREEN.
-- **br144 — config-gated advisory-only emitters (default silent).**
-  Five advisory-only injectors (classifier envelope, feature-detector
-  misfires, pure-ack receipts, fork-mode advisory) gated behind new
-  `bkit.config.json` `hooks.advisory` flags, all default FALSE —
-  266 blocks / ~190KB of per-turn noise eliminated across 8 sessions
-  and prompt-prefix caching restored (operator-reported cache
-  degradation). Strict `true` restores each injection
-  byte-equivalently. 13/13 contract suite.
-- **br139 — remember-plugin injection cap contract suite.** 33 bash
-  contract checks for the plugin-cache patch capping SessionStart
-  memory injection at 2048B (now.md priority, archive exclusion,
-  per-session content-hash dedup, fail-open on state errors);
-  mutation-verified in both directions. Patch map + re-patch procedure
-  in the archived cycle docs.
+A four-layer defense keeps a finished PDCA cycle finished: a
+terminal-state write guard rejects non-archive phase writes against
+archived features; a dead-record binding sentinel stops phantom
+re-fires for features absent from the registry; the harness
+loop-breaker (`stop_hook_active`) is honored; terminal-feature Stops
+approve silently. Fire-time skill recording replaced Stop-prose
+scraping; the QA retry ceiling is reachable (the `act -> qa` retry
+counter actually advances, with an escalation banner and a sanctioned
+recording CLI); quality gates read the live phase instead of stale
+snapshots.
 
-Testing: full battery 5368 TC / 5363 PASS / 0 FAIL / 5 SKIP.
+### Fixed — Stop-handler feature binding and report->completed
 
-### Fixed — stale-evidence candidates, advisory activity gate, checkpoint ids (2026-10-14): br047, br048, br049
+- The Stop handler binds a per-feature evidence tier between doc-path
+  matching and the primary-feature fallback, so it stops silently
+  advancing the wrong feature; report->completed advances when the
+  report-phase fire is observed AND the report doc exists on disk
+  (bug-fix cycles that skip Check can now archive).
+- `updatePdcaStatus` no longer drops `data.timestamps`; primary-feature
+  promotion picks the most recently active entry instead of the oldest.
 
-- **br047 (round 1) — stale-evidence gate candidate resolution.** The
-  gate resolved its doc-evidence feature from primaryFeature alone,
-  withholding transitions that had full evidence on disk; the candidate
-  set is now every registry feature in a transitionable phase (both
-  stop scripts, parity). Three bare exit paths in pdca-skill-stop.js
-  now emit the v2122 single-JSON allow envelope.
-- **br048 — advisory activity gate.** UserPromptSubmit advisories
-  (agent/skill suggestions, ambiguity scores, template dumps) fired on
-  every prompt; all 9 advisory sites now require a non-terminal feature
-  with a timestamp within the last 6 hours — idle sessions get silence.
-- **br049 — checkpoint id collision.** `createCheckpoint` derived ids
-  as `cp-{Date.now()}`; two checkpoints in the same millisecond
-  collided (CP-003 battery flake). Ids now retry with a `-n` suffix
-  until free; common-case shape unchanged. Suite 20/20.
-- Bookkeeping: pre-renumber duplicates br287/br289 reconciled to
-  completed/ (their fixes already landed and were changelogged as
-  br019/br021 on 2026-10-02).
+### Fixed — assorted
 
-### Fixed — br046-carry-zero (2026-10-10): G-019 read-exemption + doc-evidence archival
+- ESLint flat config: jest globals declared for `test-scripts/`
+  (-210 no-undef errors); the config can lint itself.
+- Session-start preflight advisories carry explicit non-causality
+  wording (the version advisory is not a hook failure; fresh canary
+  stamps mean hooks are firing).
+- The per-turn token ledger keeps recording after a cycle archives
+  (recording hoisted onto both Stop exit paths).
+- CI aggregate gate: three suites asserting superseded contracts
+  aligned; a stale doc count corrected; 403 files verified green
+  locally.
 
-- **br046 — read-exemption at the G-019 seam.** `isStateReadUse` in
-  `lib/control/destructive-detector.js`: cp/mv token-as-source
-  positional check + interpreter read-call-context check; any write
-  form anywhere still denies (G-020 and docTargetExempt untouched).
-  10-vector suite (3 allow / 7 deny).
-- **Historical doc-evidence archival.** New
-  `tools/doc-archive/archive-features.js` (dry-run default,
-  registry-API safety exclusion) archived ~105 historical features /
-  ~218 files across 9 doc-location variants; phantom active features
-  78 → 0. Round-5 in-scope fixes for unmasked fixture dependencies
-  (measure archive-aware finder, hermetic context-importer fixture,
-  bilingual design-count regex).
-
-Testing: SC-1 vectors 10/10; SC-2 phantoms 0; SC-3 battery 24 steps
-green — qa-aggregate 7182 PASS / 0 FAIL / 0 errored.
-
-### Fixed — br045 (2026-10-10): scope-limiter spurious L0 advisories + registry junk cleanup
-
-- **br045 — spurious L0 advisories eliminated.** `tests/**` and root
-  `*.md` added to the moderate tier and DEFAULT_SCOPE (strict tier and
-  deny rules untouched); 10 real-state writer suites sandboxed
-  hermetically; live level restored to 4 via public setLevel. Key
-  discovery: lib/core barrel memoization silently defeats env-swap
-  sandboxes unless the require-cache purge covers the whole subtree.
-- **Registry junk cleanup.** Nine junk rows removed through sanctioned
-  `lib/pdca` APIs only (orphan paths); the doc-evidence resurrection
-  source deleted (backed up to work/backups/). Zero open BR reports
-  remained after close.
-
-Testing: SC-1 level coherence pre=4/post=4 across the full battery;
-SC-2 tier probes; qa-aggregate 7179 PASS / 0 FAIL / 0 errored, exit 0.
-
-### Fixed — qa-aggregate red set (2026-10-10): 6 assertions, 5 root causes
-
-Stale test contracts aligned with shipped contracts: `@version 2.1.40`
-tags on the io.js split modules, enh-433 stdout marker repointed to
-`lib/core/_io/output.js`, lib module counts 203→207 in guides, mcp-port
-registry contract (19 tools = 13 pdca + 6 analysis), export-compat
-barrel ranges updated for deliberate br051 additive growth (154
-exports), EN-06 flipped to assert br105 semantics.
-
-Testing: 24-step contract-check battery green; qa-aggregate 7174 PASS /
-0 FAIL / 0 errored (exit 0).
-
-### Fixed — audit batch-6 tail + fence-mode vault scanning (2026-10-10): br170, br190–br192, br200
-
-- **Audit tail (br170, br190–br192).** Measure-gate trust fallback
-  'L3'→'L2' aligned with v2.1.19 S1 F1-4; jest.config phantom testMatch
-  and stale ignore patterns pruned; dead
-  `scripts/audit-output-styles.js` deleted (0 callers, guide count
-  65→64); `test/perf/` consolidated into `test/performance/`; the
-  br180-186 docs-drift cluster closed (7 members, main-verified).
-- **br200 — fence-mode vault scanning for the Docs=Code gate.**
-  `extractFencedLines()` + `crossCheck(opts.fenceMode)` (hard error on
-  unbalanced fences; default path byte-identical); authoritative
-  declaration blocks fenced in README, _GRAPH-INDEX, core-mission;
-  vault files merged into the gate's default doc set. Mutation probe
-  (44→45 Skills inside the fence) → gate exit 1 naming the file;
-  restore → 0. Closes the docs-drift exposure that shipped ~140 stale
-  vault refs with green CI. New fence unit suite 10/10, vault contract
-  8/8; unit 1985 TC pass.
-
-### Changed — docs & tooling accuracy (2026-10)
+### Changed
 
 - bkit-system overviews synced with the v2.x lib restructure — removed
-  components (lib/common.js bridge, lib/context/, consolidated phase
-  hook scripts) marked REMOVED rather than presented as live; agent/
-  skill counts corrected (34 memory-frontmatter agents, 44 skills).
-- Studio A7 blockFingerprints QA report filed (PASS).
-- `tools/brfix-wave-probes/sync_plugin_cache.sh` cache auto-detect
-  hardened: one retry on transient miss, directory dump on failure.
-
-### Fixed — br040-041 follow-up wave (2026-10-10): stale-evidence gate, pause/resume verbs, junk-row cleanup
-
-The three items deferred from the br040–br041 wave, delivered in cycle
-`br040-041-followups`:
-
-- **Gate (d) stale-evidence.** `shouldSkipAutoTransition` (both
-  `scripts/unified-stop.js` and `scripts/pdca-skill-stop.js`) now also
-  withholds the AUTO-TRANSITION when the feature's current phase has an
-  empty doc set — no artifact was produced, so the phase cannot have
-  completed. Unresolvable feature/phase never skips (no over-blocking).
-  Fix of record: gate (d)'s `getPdcaStatusPath()` require was missing in
-  both scripts, a ReferenceError silently swallowed by `catch(_)`.
-- **`/pdca pause` | `/pdca resume` verbs.** `pdca-skill-stop.js` writes/
-  removes `.bkit/state/pdca-pause` (the gate-(a) flag) sanctionedly; the
-  verb branch sits above the AUTO-TRANSITION gate so a fresh pause is
-  never withheld by the gate it silences. Skip exits now emit the
-  v2122-contract allow JSON (`outputStopAllow()`).
-- **`cleanupOrphanActiveFeatures()`** (lib/pdca/status-cleanup.js,
-  re-exported via lib/pdca/status.js): purges activeFeatures rows failing
-  `isValidFeatureName` from `activeFeatures` + `features{}` via locked
-  RMW, promoting primary via `pickPrimarySuccessor`. Used in-session to
-  clean a re-polluted real registry (full-sentence rows — the exact
-  br041 shape, from the stale cached hook).
-
-Testing: new suite `test-scripts/unit/fix-br040-041-followups.test.js`
-10/10 under jest; battery `node test/run-all.js` → 5358 TC, 5353 PASS,
-0 FAIL, 5 SKIP — ALL TESTS PASSED (after fixing the v2122 skip-exit
-schema violation and the stale status-split export counts 28→29, 5→6).
-Cycle docs archived to `docs/archive/2026-10/br040-041-followups/`.
-
-### Fixed — br040–br041 wave (2026-10-09): evidence-gated AUTO-TRANSITION, feature-name intake validation
-
-Two active reports closed in one cycle (br040-041-stop-intake), both in the
-Stop-hook / PDCA-intake subsystem:
-
-- **br040 (High) — bookkeeping-only phase transitions.** `shouldSkipAutoTransition(hookContext)`
-  now gates the AUTO-TRANSITION emit in `scripts/unified-stop.js` and
-  `scripts/pdca-skill-stop.js`: skip on the `.bkit/state/pdca-pause` flag,
-  on in-flight background work (`hasInFlightBackgroundWork`), or on an
-  active PDCA specialist agent (`\bqa\b` word-boundary regex — no substring
-  over-match). A skip emits one stderr line and exits 0 without a phase
-  write or MUST-execute directive. Gate (d) evidence-staleness deferred.
-- **br041 (Medium) — junk feature names from free-text skill args.** New
-  `lib/pdca/validate-name.js` (`normalizeFeatureName`, `isValidFeatureName`)
-  wired at all three intake points: `initializeFeature` (throw on invalid),
-  `registerFeature` (warning + no registry write), `addActiveFeature`
-  (stderr reject, no push/save). A `/pdca <verb> <sentence>` fire can no
-  longer register the sentence as a feature name. Cleanup escape hatch for
-  legacy junk rows deferred.
-
-Testing: 2 new scoped suites (`fix-br040-stop-gates.test.js`,
-`fix-br041-name-validator.test.js`, MAIN-executed); round-1 battery surfaced
-9 regressions (a `hookContext` variable-scope ReferenceError aborting the
-hook body — silent via fail-open error handling — plus 2 doc-count drifts),
-all fixed; round-2 battery `node test/run-all.js` → 5359 TC, 5354 PASS,
-0 FAIL, 5 SKIP — ALL TESTS PASSED. Both reports moved to
-`bug_reports/completed/BR/`; cycle docs archived to
-`docs/archive/2026-10/br040-041-stop-intake/`.
-
-### Fixed — br027–br039 + br384 wave (October 2026): registry write integrity, terminal-state model, scoped-feature gates, stop-hook session isolation
-
-Fourteen active reports closed in one wave, spanning four fix clusters across the
-PDCA registry writers, the phase state machine, and the Stop handlers:
-
-- **Registry write integrity (br030/br031, br037).** `pdca-status` and
-  quality-metrics writers now use locked read-modify-write
-  (`stateStore.lockedUpdate`), closing lost-update races between concurrent
-  Stop handlers; `savePdcaStatus` reports write failures loudly (stderr +
-  `false` return) instead of silently succeeding.
-- **Terminal-state model (br032/br033, br035).** `completed` is terminal in
-  `PDCA_PHASES` (order 9), the br020 guard is extended to it, and
-  `validatePdcaTransition` rejects archived/completed exits; the dead
-  `TIMEOUT`/`ABANDON` archive edges are removed from the state machine.
-- **Scoped-feature gates (br027/br034, br028, br029, br036, br038).** The
-  `requireDocs` gate no longer silently drops writes (gap-detector check
-  writes and `completePdcaFeature` pass `requireDocs:false`; gate skips on
-  registry-known features surface on stderr); the archive CLI resolves
-  scope-parent docs (`--parent`, `parentUsed`); gap-detector's Next Step
-  renders the assigned string; the pipeline deliverable check now actually
-  evaluates its globs (self-contained matcher, bounded project walk); and
-  `enforceLimit` walks the full sorted list, reporting skipped entries.
-- **Stop-hook session isolation (br039/br384).** An `ownerSession` lease
-  guards the AUTO-TRANSITION emit so a foreign session cannot advance
-  another's feature, and check-phase completion demands real evidence
-  (analysis doc or `matchRate`) rather than accepting bare prose.
-
-Testing: 3 new scoped suites (32 tests), full battery 5356 TC ALL TESTS
-PASSED, stale state-machine tests updated to the br035 contract, and the
-FM-002 root cause (polluted registry row) removed via the sanctioned orphan
-path. All 14 active reports moved to `bug_reports/completed/BR/`.
-
-### Fixed — PDCA Stop-handler completion-state hardening (registry terminal guard, dead-record binding, post-completion silence)
-
-A four-layer defense now keeps a finished PDCA cycle finished. Each layer sits at a
-different chokepoint of the Stop pipeline, so a stale skill-fire replay cannot corrupt
-registry state or pressure the agent into fabricating new work:
-
-- **Terminal-state write guard (`lib/pdca/status-core.js`).** `updatePdcaStatus`
-  rejects non-archive phase writes against features carrying archived markers
-  (phase `archived`, `archivedAt`, `archivedTo`); archive-path writes stay permitted.
-  Previously a stale Stop-handler fire silently rewound `archived` features to
-  `act`/`do`, corrupting the audit trail. Mutation-verified regression suite:
-  `test-scripts/regression/terminal-guard.test.js`.
-- **Dead-record binding sentinel (`lib/pdca/stop-binding.js`, `scripts/unified-stop.js`).**
-  A fire-time `lastSkillFeature` recording that names a feature absent from the
-  registry is proof the cycle completed (archive deletes the feature) — the Stop
-  binding now returns a null sentinel instead of falling through to
-  `primaryFeature`, killing the phantom next-phase re-fires behind the observed
-  9-consecutive-block loops. Shared `isDeadRecordedFeature` helper at both binding
-  sites; mutation-verified: `test-scripts/regression/dead-record-no-rebind.test.js`.
-- **Harness loop-breaker honored (both Stop handlers).** `stop_hook_active=true`
-  (set by Claude Code after a Stop hook blocks once) now always exits 0 —
-  previously both handlers ignored it and re-blocked. Verified in
-  `test-scripts/regression/stop-loop-breakers.test.js`.
-- **Terminal-feature emission silence (`scripts/pdca-skill-stop.js`).** Archiving
-  keeps the feature key in the registry with `phase: 'archived'`, so the dead-record
-  sentinel above did not fire — the stale transcript report envelope kept binding the
-  archived feature and re-emitting "PDCA-COMPLETE … Do NOT stop" on every later Stop.
-  A new early exit (placed after all binding tiers, same terminal predicate as the
-  write guard, plus `phase: 'completed'`) approves silently: exit 0, no output.
-  Mutation-verified regression suite:
-  `test-scripts/regression/terminal-complete-silence.test.js`
-  (archived / completed / live-feature control).
-- **Fire-time skill recording (`lib/orchestrator/skill-invocation-effects.js`,
-  `lib/pdca/stop-binding.js`).** `lastSkillAction`/`lastSkillFeature` are now written
-  when a PDCA skill FIRES (not scraped from Stop prose); the Stop binding's tier-0
-  prefers the fired feature over `primaryFeature`, and `unified-stop` spawns
-  stdin-CLI handlers correctly (a bare-require guard had made `require()` a silent
-  no-op). Gate writes read the live phase instead of a stale pre-handler snapshot.
-- **QA retry ceiling now reachable (`lib/pdca/state-machine.js`,
-  `scripts/qa-phase-stop.js`).** The `act → qa` QA_RETRY edge previously carried a
-  null guard, making the max-retry ceiling unreachable (observed retry counts > 180).
-  The guard is wired, an escalation banner names the missing metrics at retry 10 and
-  every 25th retry, and the sanctioned `scripts/pdca-record-qa.js` CLI records QA
-  results for sessions whose dispatch path is dead.
-- Resolved sessions also regain Skill-tool resolution of `bkit:pdca` (catalog and
-  resolver re-align at session start — the mid-session hot-update variant of this
-  break is a Claude Code host limitation, documented with evidence in the closed
-  report; the `pdca-record-qa` CLI remains the sanctioned recovery path).
-
-### Fixed — Stop-handler feature binding and report→completed transition
-
-- **The Stop handler no longer misbinds the feature.** The pure helper
-  `lib/pdca/stop-binding.js` (`resolveStopFeature`) adds a per-feature evidence tier
-  between doc-path matching and the `primaryFeature` fallback: when exactly one
-  registry feature sits in the phase matching the fired action, the Stop handler binds
-  that feature instead of silently advancing `primaryFeature`. Mutation-locked by
-  `test/unit/stop-binding.test.js`.
-- **report→completed no longer depends on the Task system.** The Stop handler
-  advances report→completed when the report-phase fire is observed AND the feature's
-  report doc exists on disk (same check the archive CLI makes). The archive gate's
-  docs-on-disk arm now accepts bug-fix doc sets — `analysis` moved to optional, so
-  cycles that skip Check can archive instead of stranding at E-ARCH-GATE forever.
-- **`updatePdcaStatus` no longer drops `data.timestamps`.** The timestamps rebuild
-  merges `data.timestamps` with `lastUpdated` kept last, so callers like
-  `archiveFeature` (`archivedAt`) land in the registry.
-- **`primaryFeature` no longer reverts to a stale feature.** The sanctioned promotion
-  fallback picked `activeFeatures[0]` (the OLDEST entry), so archiving the current
-  feature re-promoted a days-old one and re-poisoned every hook fallback binding.
-  `pickPrimarySuccessor(status)` (most recently active by `timestamps.lastUpdated`)
-  is now used at all 5 promotion sites; mutation-locked by
-  `test/unit/pdca-primary-successor.test.js`.
-- **Pre-existing (from upstream merge): destructive-detector targetFields grading was
-  dead.** `detect()`'s targetFields branch pushed `rule.severity` directly, never
-  consulting `severityFor` — every Bash-path match graded critical/deny regardless of
-  target scope. Fixed to grade by target like the segmented path (scoped find-delete
-  now asks instead of denying).
-- Docs refreshed for the new lib module count (201 → 202) in CUSTOMIZATION-GUIDE.md
-  and AI-NATIVE-DEVELOPMENT.md.
-
-### Fixed — ESLint flat-config coverage for test files and self-linting
-
-- **Jest globals declared for `test-scripts/`.** A new override block for
-  `test-scripts/**/*.test.js` (readonly `describe`/`it`/`test`/`expect`/
-  `beforeAll`/`afterAll`/`beforeEach`/`afterEach`/`jest`, inlined literal per the
-  config's import-free constraint) removes the 210 no-undef errors that appeared
-  when jest's `testMatch` moved to `test-scripts/`. `npx eslint test-scripts/`:
-  0 errors; full-repo error count 2303 → 2046 (remainder pre-existing
-  `no-console` violations, untouched).
-- **`eslint.config.js` can now lint itself.** The base block applied
-  `sourceType: "script"` to every `**/*.js` file — including the flat config's own
-  `export default`. A self-referential
-  `{ files: ["eslint.config.js"], languageOptions: { sourceType: "module" } }`
-  override fixes the parse error.
-
-### Fixed — session-start preflight disambiguation
-
-- The `fork-default-agent-spawn` advisory (lib/infra/cc-version-checker.js) and the
-  hook-reachability warning (hooks/session-start.js, via the pure
-  `buildReachabilityWarning` builder in lib/core/hook-reachability.js) now carry
-  explicit non-causality wording: the version advisory is NOT a hook failure; fresh
-  bash_post/write_post canary stamps mean hooks ARE firing; a stalled PDCA registry
-  while canaries are fresh points at skipped `/pdca <phase>` skill fires, not a hook
-  drop. Content locks:
-  `test/unit/preflight-hookdrop-disambiguation.test.js`.
-
-### Fixed — archive CLI now moves every phase-document variant
-
-- **`/pdca archive` no longer strands bilingual doc siblings.** The CLI's
-  `discoverDocs` collected one file per phase (`findDoc` returns the first
-  existing candidate), so a bilingual cycle — the project mandates en+ko
-  sibling pairs for new docs — archived one variant and left the other in the
-  source directory (observed twice; agents had to move the leftovers by
-  hand). A new `findAllDocs(phase, feature)` helper (lib/core/paths.js,
-  all readable candidates, deduped) backs a multi-variant collector; gate
-  semantics unchanged (a phase is missing only when no variant exists).
-  Mutation-verified regression suite:
-  `test-scripts/regression/archive-bilingual-pairs.test.js`
-  (bilingual / monolingual / gate cases).
-
-### Fixed — per-turn token measurement survives post-completion Stops
-
-- **The token ledger no longer stops growing after a cycle archives.** The
-  post-completion dead-record exit in `unified-stop` fired before the
-  per-turn observability block at the end of the handler, so once a session's
-  fire-time feature recording named an archived-out feature, every later Stop
-  silently skipped token-ledger and cc-regression recording. The recording
-  block is hoisted into `recordTurnObservability()` and runs on BOTH exit
-  paths. Caught by pre-running the CI contract suite locally against a live
-  registry (a fresh CI checkout never sees it); regression is covered by
-  `test/contract/integration-runtime.test.js` (23/23 with the dead-record
-  state live).
-
-### Fixed — CI aggregate gate: stale test contracts aligned with shipped behavior
-
-- The 403-file QA aggregate (contract-check CI) exposed three suites asserting
-  contracts their own change-waves had superseded — red since those waves
-  landed (their batteries ran only the jest suites), plus one stale doc count:
-  - destructive-detector.targetfields: G-001 now asserted per the v2.1.34 D9
-    contract (broad target denies, specific target asks) — both arms covered.
-  - pdca-archive-gate: `analysis` is an OPTIONAL phase document (bug-fix
-    cycles skip Check); `discoverDocs` missing-list asserted required-only.
-  - hook-behavioral-bash-pre: success-path stdout is opt-in
-    (`BKIT_VERBOSE_VALIDATION=1`); BPRE-05 made hermetic via a sandbox
-    `CLAUDE_PROJECT_DIR` (live session state leaked a "for sprint" clause
-    into the message when run under the aggregate).
-  - CUSTOMIZATION-GUIDE.md Scripts count corrected 64 → 65.
-- Full aggregate verified locally: 403 files, 7,155 PASS / 0 FAIL / 0 errors.
-
-### Chore
-
-- `.gitignore`: `bkit-debug.log` ignored.
-- Bug-report catalog housekeeping: closed reports moved to `bug_reports/completed/`
-  with `.completed` markers; stale INDEX entries removed (already-completed items
-  still listed as open; top-level INDEX carried dead links to reports that were
-  never in this repo).
-
-## [2.1.39] - 2026-09-19 (unreleased — version heading provisional; the maintainer assigns the release number)
-
-### Fixed — bugfix-wave-20260919 (six bug reports resolved via full PDCA cycle, matchRate 94%, QA_PASS)
-
-- **RB-003 — G-001/G-013 no longer fire on Write/Edit content.** Both rules now declare
-  `targetFields: ['command']` (the G-020 mechanism), so a Write whose *content* merely
-  mentions `rm -rf`, `rimraf`, or `shutil.rmtree` is no longer denied. Bash keeps full
-  coverage — the only surface that can actually execute a deletion. Both-sides regression
-  suite: `test/unit/destructive-detector.targetfields.test.js`.
-- **archive-phase-write — archive status write no longer silently gated out.**
-  `archiveFeature`'s archived-phase `updatePdcaStatus` call now passes `requireDocs:false`
-  (lib/pdca/lifecycle.js) — an archived feature has by definition left its docs' source
-  location, so the doc gate can no longer swallow the write.
-- **BR-001 — sanctioned orphan-row cleanup.** `deleteFeatureFromStatus` now removes
-  non-terminal active rows whose plan/design docs are provably absent
-  (`reason: 'orphan-removed (docs missing)'`), recovering the 3-feature
-  `canStartFeature` cap without hand-editing the registry. Live features with docs
-  remain protected: `test/unit/status-cleanup-orphan.test.js`.
-- **RB-002 + BR-002 — matchRate recording repaired.** `gap-detector-stop.js` now
-  reorders the regex (`Overall Match Rate` first, table form `Overall Match Rate | 98%`
-  handled), passes the regex-extracted feature name into `extractFeatureFromContext`
-  (the old call passed keys the function ignores, guaranteeing the primaryFeature
-  fallback), and adds a wrong-feature guard (unknown feature → parseWarning, nothing
-  recorded). Suite: `test/unit/gap-detector-stop-parsing.test.js`.
-- **RB-002 — archive gate accepts docs-on-disk evidence.** `pdca-archive.js` now passes
-  when phase is report..completed AND all 4 documents exist at canonical paths
-  (`gate: 'docs-on-disk'` in the payload) — registry bookkeeping drift no longer
-  permanently blocks archiving a genuinely complete cycle. Fail-closed preserved for
-  earlier phases. Suite: `test/unit/pdca-archive-gate.test.js`.
-- **stop-failure-payload — Stop failure entries carry real fields.** `parseFailurePayload`
-  (scripts/stop-failure-handler.js) extracts plain-string `error`, `last_assistant_message`
-  (string and content[0].text forms), derives errorType from the classifier when absent,
-  and adds an `exit_code` category — failures no longer collapse to unknown/low/empty.
-  Suite: `test/unit/stop-failure-payload.test.js`.
-
-### Added
-
-- 5 regression suites / 48 test cases covering the fixes above; full unit battery green
-  (1979/1980 executed, 0 fail). Bug reports `rb003`, `rb002`, `archive-phase-write`,
-  `br001`, `br002` moved to `bug_reports/completed/` with `.completed` markers; new
-  open reports filed during the wave: `br003` (updatePdcaStatus drops data.timestamps),
-  `br004` (CHANGELOG provisional heading vs plugin.json version-sync integration test —
-  pre-existing, maintainer action).
-
-## [2.1.39] - 2026-09-07 (unreleased — version heading provisional; the maintainer assigns the release number)
-
-### Fixed — the PDCA registry never advanced on a skill fire
-
-Field evidence (`work/pdca-skill-fire-test-results.md`): three real `/pdca` fires were
-detected by the hook layer (registry timestamp advanced, guidance emitted) while the
-feature was never registered and no phase changed. Root cause:
-`runSkillInvocationEffects` gated the phase write on the skill's *static* frontmatter
-`pdca-phase`, which the `pdca` router declares `null` by design — the effective phase
-arrives as the invocation's action token, which #135 wired into guidance but never into
-the write path. Router fires now resolve the phase from the action (direct names plus
-`analyze→check`, `iterate→act` aliases, reusing the `PDCA_ACTION_PHASES` SSoT) and pass
-`requireDocs:false` — a new feature's documents are the phase's *output* and cannot
-exist at fire time. Read-like actions (`status`, `next`) still write nothing.
-
-### Added — the registry is broker-only, portably
-
-- **G-020 (Registry state write, critical/deny)** denies agent Write/Edit operations
-  targeting `.bkit/state/*.json`, porting the machine-local Python pdca-guard's
-  PRE-EXEC semantics into bkit's own detector. A new `targetFields` rule property
-  scopes it to the tool's TARGET — a state-path mention in payload prose is not a
-  write. Documentation files (`.md`/`.txt`, any `docs/` path) are exempt *before* any
-  state-token matching, closing the reported false-positive class where a design doc
-  demonstrating a state-path command was denied for its content.
-- **G-019 redirect-form fix**: both alternations' bare `>>?` now require
-  `(?<![0-9&])` — stderr/descriptor redirects (`2>`, `&>`) are not the stdout-write
-  token, so read-only commands like `grep … 2>/dev/null` near a state path pass again
-  (live-measured false positive). Narrowing only; plain and append redirects still deny.
-- **`scripts/pdca-archive.js`** — the sanctioned archive path: dry-run by default,
-  `--apply` to mutate, completion gate evaluated before any filesystem change,
-  registry write ordered before document moves (the issue #89 `requireDocs` gate
-  would otherwise silently skip the archived transition), `--summary` for metrics
-  preservation. `lifecycle.archiveFeature` — previously wired to nothing — is its
-  registry writer.
-- **Deny guidance names the sanctioned paths**: `alternativesFor()` G-019/G-020
-  entries and the Write-path block message direct to `/pdca <phase> <feature>`, the
-  archive CLI, and the `bkit_pdca_status` MCP tool instead of generic "ask the user".
-- **The pdca skill's steps are brokered-registry-true**: every
-  "Update `.bkit/state/pdca-status.json`" step is now verify-only (fire-time writes,
-  gap-detector Stop hook for matchRate, TaskCompleted for `completed`, the CLI for
-  archive), `/pdca status` reads MCP-first with the lib API as fallback, and template
-  references disclose their resolved location (`${CLAUDE_PLUGIN_ROOT}/templates/`) so
-  agents stop searching the project root for them.
-
-### Fixed — the Write-path detector verdict was advisory only
-
-The gap analysis's Critical finding, live-confirmed by probe: `pre-write.js` Stage 6
-pushed destructive detections into `contextParts` and emitted them via `outputAllow` —
-the engine correctly detected G-020 on a registry Write while the write proceeded, and
-the audit trail recorded `destructive_blocked` / `result: 'blocked'` for writes that
-actually executed (the ENH-388 false-assurance class). Deny-action detections now
-return the ENH-398 verdict object and the hook blocks; `blocked` is reserved for real
-blocks, advisory detections log `destructive_detected` / `advisory`. A new L2
-synthetic-stdin hook suite pins the behavior end-to-end (registry Write blocked with
-sanctioned-path guidance; `.md` doc with state-path prose allowed; Bash parity).
-
-Verified across the cycle: gap analysis 73.5% → 95.0% after one Act iteration; QA_PASS
-(L1 31/31, L2 4/4, L3 11/11, L5 40/40, hook cost ~76–78 ms median = 1.7% of the 5 s
-budget); full battery 5,355 TC, 0 FAIL. The feature's own cycle advanced plan →
-archived through the new mechanism with zero manual registry writes, and archived
-itself with its own CLI.
+  components marked REMOVED rather than presented as live; agent/skill
+  counts corrected; Studio A7 blockFingerprints QA report filed (PASS).
+- Plugin cache sync tooling hardened (cache auto-detect retry).
+- `.gitignore`: `bkit-debug.log` ignored. Bug-report catalog
+  housekeeping: closed reports moved to `bug_reports/completed/` with
+  `.completed` markers; stale index entries removed.
 
 ## [2.1.40] - 2026-09-25
 
@@ -785,6 +328,112 @@ work that had just completed.
 - The `once` note in that report is not acted on: running `session-start.js` on
   every `SessionStart` is the intended behaviour, and whether `once` is honoured
   on a command object is unverified here.
+
+## [2.1.39] - 2026-09-19 (unreleased — version heading provisional; the maintainer assigns the release number)
+
+### Fixed — bugfix-wave-20260919 (six bug reports resolved via full PDCA cycle, matchRate 94%, QA_PASS)
+
+- **RB-003 — G-001/G-013 no longer fire on Write/Edit content.** Both rules now declare
+  `targetFields: ['command']` (the G-020 mechanism), so a Write whose *content* merely
+  mentions `rm -rf`, `rimraf`, or `shutil.rmtree` is no longer denied. Bash keeps full
+  coverage — the only surface that can actually execute a deletion. Both-sides regression
+  suite: `test/unit/destructive-detector.targetfields.test.js`.
+- **archive-phase-write — archive status write no longer silently gated out.**
+  `archiveFeature`'s archived-phase `updatePdcaStatus` call now passes `requireDocs:false`
+  (lib/pdca/lifecycle.js) — an archived feature has by definition left its docs' source
+  location, so the doc gate can no longer swallow the write.
+- **BR-001 — sanctioned orphan-row cleanup.** `deleteFeatureFromStatus` now removes
+  non-terminal active rows whose plan/design docs are provably absent
+  (`reason: 'orphan-removed (docs missing)'`), recovering the 3-feature
+  `canStartFeature` cap without hand-editing the registry. Live features with docs
+  remain protected: `test/unit/status-cleanup-orphan.test.js`.
+- **RB-002 + BR-002 — matchRate recording repaired.** `gap-detector-stop.js` now
+  reorders the regex (`Overall Match Rate` first, table form `Overall Match Rate | 98%`
+  handled), passes the regex-extracted feature name into `extractFeatureFromContext`
+  (the old call passed keys the function ignores, guaranteeing the primaryFeature
+  fallback), and adds a wrong-feature guard (unknown feature → parseWarning, nothing
+  recorded). Suite: `test/unit/gap-detector-stop-parsing.test.js`.
+- **RB-002 — archive gate accepts docs-on-disk evidence.** `pdca-archive.js` now passes
+  when phase is report..completed AND all 4 documents exist at canonical paths
+  (`gate: 'docs-on-disk'` in the payload) — registry bookkeeping drift no longer
+  permanently blocks archiving a genuinely complete cycle. Fail-closed preserved for
+  earlier phases. Suite: `test/unit/pdca-archive-gate.test.js`.
+- **stop-failure-payload — Stop failure entries carry real fields.** `parseFailurePayload`
+  (scripts/stop-failure-handler.js) extracts plain-string `error`, `last_assistant_message`
+  (string and content[0].text forms), derives errorType from the classifier when absent,
+  and adds an `exit_code` category — failures no longer collapse to unknown/low/empty.
+  Suite: `test/unit/stop-failure-payload.test.js`.
+
+### Added
+
+- 5 regression suites / 48 test cases covering the fixes above; full unit battery green
+  (1979/1980 executed, 0 fail). Closed reports moved to
+  `bug_reports/completed/` with `.completed` markers; new open reports
+  filed during the wave: `updatePdcaStatus` drops `data.timestamps`; the
+  CHANGELOG provisional-heading vs plugin.json version-sync mismatch
+  (pre-existing, maintainer action).
+
+## [2.1.39] - 2026-09-07 (unreleased — version heading provisional; the maintainer assigns the release number)
+
+### Fixed — the PDCA registry never advanced on a skill fire
+
+Field evidence (`work/pdca-skill-fire-test-results.md`): three real `/pdca` fires were
+detected by the hook layer (registry timestamp advanced, guidance emitted) while the
+feature was never registered and no phase changed. Root cause:
+`runSkillInvocationEffects` gated the phase write on the skill's *static* frontmatter
+`pdca-phase`, which the `pdca` router declares `null` by design — the effective phase
+arrives as the invocation's action token, which #135 wired into guidance but never into
+the write path. Router fires now resolve the phase from the action (direct names plus
+`analyze→check`, `iterate→act` aliases, reusing the `PDCA_ACTION_PHASES` SSoT) and pass
+`requireDocs:false` — a new feature's documents are the phase's *output* and cannot
+exist at fire time. Read-like actions (`status`, `next`) still write nothing.
+
+### Added — the registry is broker-only, portably
+
+- **G-020 (Registry state write, critical/deny)** denies agent Write/Edit operations
+  targeting `.bkit/state/*.json`, porting the machine-local Python pdca-guard's
+  PRE-EXEC semantics into bkit's own detector. A new `targetFields` rule property
+  scopes it to the tool's TARGET — a state-path mention in payload prose is not a
+  write. Documentation files (`.md`/`.txt`, any `docs/` path) are exempt *before* any
+  state-token matching, closing the reported false-positive class where a design doc
+  demonstrating a state-path command was denied for its content.
+- **G-019 redirect-form fix**: both alternations' bare `>>?` now require
+  `(?<![0-9&])` — stderr/descriptor redirects (`2>`, `&>`) are not the stdout-write
+  token, so read-only commands like `grep … 2>/dev/null` near a state path pass again
+  (live-measured false positive). Narrowing only; plain and append redirects still deny.
+- **`scripts/pdca-archive.js`** — the sanctioned archive path: dry-run by default,
+  `--apply` to mutate, completion gate evaluated before any filesystem change,
+  registry write ordered before document moves (the issue #89 `requireDocs` gate
+  would otherwise silently skip the archived transition), `--summary` for metrics
+  preservation. `lifecycle.archiveFeature` — previously wired to nothing — is its
+  registry writer.
+- **Deny guidance names the sanctioned paths**: `alternativesFor()` G-019/G-020
+  entries and the Write-path block message direct to `/pdca <phase> <feature>`, the
+  archive CLI, and the `bkit_pdca_status` MCP tool instead of generic "ask the user".
+- **The pdca skill's steps are brokered-registry-true**: every
+  "Update `.bkit/state/pdca-status.json`" step is now verify-only (fire-time writes,
+  gap-detector Stop hook for matchRate, TaskCompleted for `completed`, the CLI for
+  archive), `/pdca status` reads MCP-first with the lib API as fallback, and template
+  references disclose their resolved location (`${CLAUDE_PLUGIN_ROOT}/templates/`) so
+  agents stop searching the project root for them.
+
+### Fixed — the Write-path detector verdict was advisory only
+
+The gap analysis's Critical finding, live-confirmed by probe: `pre-write.js` Stage 6
+pushed destructive detections into `contextParts` and emitted them via `outputAllow` —
+the engine correctly detected G-020 on a registry Write while the write proceeded, and
+the audit trail recorded `destructive_blocked` / `result: 'blocked'` for writes that
+actually executed (the ENH-388 false-assurance class). Deny-action detections now
+return the ENH-398 verdict object and the hook blocks; `blocked` is reserved for real
+blocks, advisory detections log `destructive_detected` / `advisory`. A new L2
+synthetic-stdin hook suite pins the behavior end-to-end (registry Write blocked with
+sanctioned-path guidance; `.md` doc with state-path prose allowed; Bash parity).
+
+Verified across the cycle: gap analysis 73.5% → 95.0% after one Act iteration; QA_PASS
+(L1 31/31, L2 4/4, L3 11/11, L5 40/40, hook cost ~76–78 ms median = 1.7% of the 5 s
+budget); full battery 5,355 TC, 0 FAIL. The feature's own cycle advanced plan →
+archived through the new mechanism with zero manual registry writes, and archived
+itself with its own CLI.
 
 ## [2.1.38] - 2026-08-17
 
@@ -6213,21 +5862,3 @@ For Gemini CLI users, consider using native Gemini CLI extensions or alternative
 - 26 skills for various development phases
 - Zero Script QA methodology
 - Multilingual support (EN, KO, JA, ZH)
-
-## [Unreleased] — wave1028 (hook-audit-fix-wave-1028, 2026-10-28)
-
-Resolved all 38 open hook-layer reports (rb007-rb043, br878, br879) across
-8 fix modules. Highlights: stdin parse/schema failures now fail CLOSED at
-the Bash and Stop gates (rb043/rb018/rb020); directive caches are bound to
-CLAUDE.md mtime+hash and void on source absence (rb022 — closes the forged
-RB5-4 chain); interpreter prefixes removed from the permission allowlist and
-write exemptions are containment-resolved (rb019); the active-skill marker
-and skill recordings carry session identity (rb014/rb015/rb020);
-pdca-post-write.js restored (rb021); self-identifying tool-failure context
-+ benign-failure arm (rb033/br878); boundary-based deny matching in
-lib/defense/deny-matching.js (rb007/rb008/rb009/rb013); truthful audit
-vocabulary and registered output channels (rb026/rb027/rb031/rb035);
-stale-schema/cwd migration and a deny-biased janitor (rb025/rb029/rb039);
-contract cleanups (rb028/rb032/rb034/rb036/rb038/rb040/rb042). Tests:
-pre-write-pipeline registry isolation + status-split export count (br879);
-HIS-17/18/20 updated to the rb042 contract. Docs: lib 210 / Scripts 65.
