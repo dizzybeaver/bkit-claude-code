@@ -141,14 +141,38 @@ function runPdcaDocCheck(ctx) {
   try {
     const currentStatus = getPdcaStatusFull();
     const activeFeature = currentStatus?.primaryFeature;
+    const activeRow = activeFeature && currentStatus.features
+      ? currentStatus.features[activeFeature]
+      : null;
     if (activeFeature && activeFeature === feature) {
-      // L3 게이트가 plan/design 문서 부재 시 silent no-op 보장
-      updatePdcaStatus(feature, 'do', { lastFile: ctx.filePath });
-      debugLog('PreToolUse', 'PDCA status updated', {
-        feature,
-        phase: 'do',
-        hasDesignDoc: !!out.designDoc,
-      });
+      // rb032 (hook-audit-1028) — monotonic phase guard, local insurance in
+      // front of updatePdcaStatus: this Write/Edit hook stamps phase 'do',
+      // so a feature already PAST 'do' (check/act/qa/report/…) must not be
+      // rewound by a file write. Sanctioned transitions advance phases only
+      // through the skill-fire path; a source-file edit is never one.
+      const PHASE_ORDER = ['pm', 'plan', 'design', 'do', 'check', 'act', 'qa', 'report', 'archived', 'completed'];
+      const currentPhase = activeRow ? activeRow.phase : null;
+      const currentIdx = PHASE_ORDER.indexOf(currentPhase);
+      if (currentIdx > PHASE_ORDER.indexOf('do')) {
+        debugLog('PreToolUse', 'Skipped phase regression (rb032 monotonic guard)', {
+          feature,
+          currentPhase,
+          attemptedPhase: 'do',
+        });
+      } else {
+        // L3 게이트가 plan/design 문서 부재 시 silent no-op 보장
+        // rb032: lastFile is SESSION-SCOPED — a bare cross-session stamp let a
+        // second session's edit contaminate the first session's feature row.
+        updatePdcaStatus(feature, 'do', {
+          lastFile: ctx.filePath,
+          lastFileSession: process.env.CLAUDE_CODE_SESSION_ID || null,
+        });
+        debugLog('PreToolUse', 'PDCA status updated', {
+          feature,
+          phase: 'do',
+          hasDesignDoc: !!out.designDoc,
+        });
+      }
     } else {
       debugLog('PreToolUse', 'Skipped phantom feature registration', {
         extracted: feature,
@@ -346,15 +370,27 @@ function runDestructiveDetector(ctx) {
         } catch (e) {
           debugLog('PreToolUse', 'audit write failed (destructive)', { error: e.message });
         }
+        // rb032 (hook-audit-1028) — word-boundary the alternatives: the
+        // PDCA-registry guidance only makes sense when the denied target IS
+        // the registry (.bkit/state segment-exact), not for any deny-rule
+        // match. Anything else gets generic alternatives.
+        const deniedTarget = String(toolInput.file_path || '');
+        const isRegistryWrite = /(^|[/\\])\.bkit[/\\]state([/\\]|$)/.test(deniedTarget);
+        const alternatives = isRegistryWrite
+          ? [
+            'The PDCA registry (.bkit/state/) is broker-only-writable — phases advance ONLY by firing the skill: /pdca <phase> <feature>',
+            'To archive a completed feature, run: node scripts/pdca-archive.js <feature> (dry-run first, --apply to mutate)',
+            'To READ state, use the bkit_pdca_status MCP tool instead of writing or opening the registry',
+          ]
+          : [
+            'Rephrase the operation without the destructive action, or split it into safer steps',
+            'Ask the user to confirm the destructive operation explicitly before retrying',
+          ];
         return {
           block: true,
           rule: denying[0].id,
           reason: `Destructive operation denied: ${denying.map((r) => `${r.id} (${r.name})`).join('; ')}.`,
-          alternatives: [
-            'The PDCA registry (.bkit/state/) is broker-only-writable — phases advance ONLY by firing the skill: /pdca <phase> <feature>',
-            'To archive a completed feature, run: node scripts/pdca-archive.js <feature> (dry-run first, --apply to mutate)',
-            'To READ state, use the bkit_pdca_status MCP tool instead of writing or opening the registry',
-          ],
+          alternatives,
         };
       }
       // Advisory detections (ask-grade rules) stay annotations — with an
@@ -570,8 +606,11 @@ function main() {
     // H8/H9 fix (audit): record the denial BEFORE exiting — otherwise security-
     // relevant permission denials never reach the audit trail.
     runAuditLog(ctx, { result: 'denied', denyReason: perm.denyReason });
+    // rb032 (hook-audit-1028): outputBlock emits the structured deny payload
+    // and exits itself — the former trailing process.exit(2) here was
+    // unreachable and would contradict the graceful-deny exit-0 contract if
+    // the io contract ever changed.
     outputBlock(perm.denyReason);
-    process.exit(2);
   }
   if (perm.askContext) contextParts.push(perm.askContext);
 

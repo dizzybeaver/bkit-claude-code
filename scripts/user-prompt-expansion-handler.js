@@ -41,6 +41,7 @@ function formatGuidance(suggestions) {
 
 try {
   const { readStdinSync } = require('../lib/core/io');
+  const { debugLog } = require('../lib/core/debug');
   const { normalizeSkillName } = require('../lib/core/skill-name');
   const orch = require('../lib/skill-orchestrator');
 
@@ -75,8 +76,29 @@ try {
   const { runSkillInvocationEffects } = require('../lib/orchestrator/skill-invocation-effects');
   const dedupeKey = `${input.session_id || ''}:${skillName}:${args.action || ''}:${args.feature || ''}`;
 
-  runSkillInvocationEffects(skillName, args, { source: 'slash-command', dedupeKey })
+  /*
+   * rb040 (hook-audit-1028): the effects are now AWAITED within the hook
+   * budget, not fire-and-forget. CC may kill the hook process the moment the
+   * event loop drains — an unawaited promise race meant torn/lost expansion
+   * state that reads as "never ran" (debug-trace-first trap). Racing a budget
+   * timer keeps the fail-open contract (never block the slash command) while
+   * giving the writes the process's full remaining lifetime to land.
+   */
+  const HOOK_BUDGET_MS = 8000;
+  const budget = new Promise((resolve) => setTimeout(resolve, HOOK_BUDGET_MS));
+  const effects = runSkillInvocationEffects(skillName, args, { source: 'slash-command', dedupeKey });
+
+  Promise.race([effects, budget])
     .then((result) => {
+      // result is undefined when the budget timer won the race — the effects
+      // are still in flight and CC will kill them; that is the documented
+      // fail-open ceiling, but it is now VISIBLE in debugLog.
+      if (result === undefined) {
+        debugLog('PromptExpansion', 'Hook budget elapsed before effects settled', {
+          skillName, dedupeKey,
+        });
+        process.exit(0);
+      }
       const guidance = formatGuidance(result && result.suggestions);
       if (guidance) {
         // UserPromptExpansion injects stdout as context.
@@ -84,7 +106,14 @@ try {
       }
       process.exit(0);
     })
-    .catch(() => process.exit(0));
+    .catch((e) => {
+      // rb040: log-and-continue, not silent exit 0 — failure must be
+      // diagnosable even though the slash command still proceeds.
+      debugLog('PromptExpansion', 'Skill invocation effects failed', {
+        skillName, dedupeKey, error: e instanceof Error ? e.message : String(e),
+      });
+      process.exit(0);
+    });
 } catch (_e) {
   // Fail-open: never block the slash command.
   process.exit(0);

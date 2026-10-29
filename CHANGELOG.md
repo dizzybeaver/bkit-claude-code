@@ -6175,3 +6175,21 @@ For Gemini CLI users, consider using native Gemini CLI extensions or alternative
 - 26 skills for various development phases
 - Zero Script QA methodology
 - Multilingual support (EN, KO, JA, ZH)
+
+## [Unreleased] — wave1028 (hook-audit-fix-wave-1028, 2026-10-28)
+
+Resolved all 38 open hook-layer reports (rb007-rb043, br878, br879) across
+8 fix modules. Highlights: stdin parse/schema failures now fail CLOSED at
+the Bash and Stop gates (rb043/rb018/rb020); directive caches are bound to
+CLAUDE.md mtime+hash and void on source absence (rb022 — closes the forged
+RB5-4 chain); interpreter prefixes removed from the permission allowlist and
+write exemptions are containment-resolved (rb019); the active-skill marker
+and skill recordings carry session identity (rb014/rb015/rb020);
+pdca-post-write.js restored (rb021); self-identifying tool-failure context
++ benign-failure arm (rb033/br878); boundary-based deny matching in
+lib/defense/deny-matching.js (rb007/rb008/rb009/rb013); truthful audit
+vocabulary and registered output channels (rb026/rb027/rb031/rb035);
+stale-schema/cwd migration and a deny-biased janitor (rb025/rb029/rb039);
+contract cleanups (rb028/rb032/rb034/rb036/rb038/rb040/rb042). Tests:
+pre-write-pipeline registry isolation + status-split export count (br879);
+HIS-17/18/20 updated to the rb042 contract. Docs: lib 210 / Scripts 65.

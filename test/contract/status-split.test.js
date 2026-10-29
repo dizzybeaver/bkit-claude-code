@@ -54,7 +54,7 @@ const cleanup = require('../../lib/pdca/status-cleanup');
 // br007 fix added pickPrimarySuccessor (sanctioned promotion fallback) → 21.
 test('status-core exports 21 functions', () => assert.strictEqual(Object.keys(core).length, 21));
 test('status-migration exports 3 functions', () => assert.strictEqual(Object.keys(migration).length, 3));
-test('status-cleanup exports 6 functions', () => assert.strictEqual(Object.keys(cleanup).length, 6));
+test('status-cleanup exports 7 functions', () => assert.strictEqual(Object.keys(cleanup).length, 7));
 
 // ==================== createInitialStatusV2 ====================
 test('createInitialStatusV2 returns v2.0 version', () => {

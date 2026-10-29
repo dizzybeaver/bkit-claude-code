@@ -37,6 +37,27 @@ const { getPdcaStatusFull, getFeatureStatus } = require('../lib/pdca/status');
 
 // PDCA doc directories that trigger the gap-detector suggestion.
 const PDCA_DOC_DIRS = ['docs/01-plan/', 'docs/02-design/'];
+// Segment forms of the same directories (rb036 path-boundary match).
+const PDCA_DOC_SUBDIRS = ['01-plan', '02-design'];
+
+/**
+ * rb036 (hook-audit-1028): path-SEGMENT match, not substring. The old
+ * `filePath.includes(dir)` classified `mydocs/01-plan-notes/x.md` or any
+ * path merely containing the text `docs/01-plan/` as a PDCA plan-doc change.
+ * Matching requires complete `docs` + `01-plan`/`02-design` segments,
+ * in order, in the normalized path.
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+function matchesPdcaDocDir(filePath) {
+  const segments = String(filePath || '').replace(/\\/g, '/').split('/');
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (segments[i] === 'docs' && PDCA_DOC_SUBDIRS.includes(segments[i + 1])) {
+      return true;
+    }
+  }
+  return false;
+}
 
 // Phases where a design-doc change matters (do and later).
 const ACTIVE_PHASES = ['do', 'check', 'act', 'report'];
@@ -56,7 +77,7 @@ const filePath = input?.tool_input?.file_path || input?.file_path || '';
 
 debugLog('PdcaDocChanged', 'Document written', { filePath });
 
-const isPdcaDoc = PDCA_DOC_DIRS.some((dir) => filePath.includes(dir));
+const isPdcaDoc = matchesPdcaDocDir(filePath);
 if (!isPdcaDoc) {
   outputEmpty();
   process.exit(0);

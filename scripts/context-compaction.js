@@ -74,7 +74,11 @@ try {
       hookSpecificOutput: { hookEventName: 'PreCompact', additionalContext: blockMsg },
     }));
     debugLog('ContextCompaction', 'PreCompact blocked', { reason, phase: activePhase, feature: pdcaStatus.primaryFeature });
-    process.exit(2); // CC: exit 2 == block
+    // rb028 (hook-audit-1028): ONE block contract only — the structured
+    // stdout JSON above. The former process.exit(2) raced the same signal
+    // (exit code 2 == block for stdout-less hooks), so CC could see the
+    // block twice or read neither cleanly. Structured JSON + exit 0.
+    process.exit(0);
   }
 
   // v2.1.10 Sprint 5.5: sample counter even when not blocked
@@ -113,7 +117,13 @@ if (pdcaStatus) {
       `snapshot-${Date.now()}.json`
     );
 
-    fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+    // rb028 (hook-audit-1028): atomic write — a compaction interrupted
+    // mid-write used to leave a truncated snapshot that the restore path
+    // would then read as a partial PDCA state. Temp + rename is atomic on
+    // POSIX; a torn temp file never becomes a snapshot.
+    const tmpPath = `${snapshotPath}.tmp-${process.pid}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2));
+    fs.renameSync(tmpPath, snapshotPath);
 
     debugLog('ContextCompaction', 'Snapshot saved', { path: snapshotPath });
 

@@ -74,7 +74,21 @@ try {
   process.exit(0);
 }
 
-const userPrompt = input.prompt || input.user_message || input.message || '';
+// rb034 (hook-audit-1028): type-guard the prompt envelope. A non-string
+// prompt (malformed envelope, numeric/object payload) used to flow into
+// `.length` and strict string paths — either a silent no-op or an uncaught
+// throw. A prompt field that is present but not a string degrades to an
+// empty-context exit 0, matching the stdin-failure polarity above.
+const rawPrompt = input.prompt ?? input.user_message ?? input.message;
+if (rawPrompt !== undefined && rawPrompt !== null && typeof rawPrompt !== 'string') {
+  debugLog('UserPrompt', 'Non-string prompt field; degrading to empty context', {
+    promptType: typeof rawPrompt,
+  });
+  outputEmpty();
+  process.exit(0);
+}
+
+const userPrompt = rawPrompt || '';
 
 debugLog('UserPrompt', 'Hook started', { promptLength: userPrompt.length });
 
@@ -348,9 +362,10 @@ try {
 
 if (contextParts.length > 0) {
   const context = truncateContext(contextParts.join(' | '));
+  // rb034 (hook-audit-1028): top-level `success`/`message` are not
+  // UserPromptSubmit schema fields — the contract is hookSpecificOutput only.
+  // Inert duplicates dropped to stop the contract drift.
   console.log(JSON.stringify({
-    success: true,
-    message: context || undefined,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
       additionalContext: context || undefined,
@@ -363,7 +378,6 @@ if (contextParts.length > 0) {
   }));
 } else if (sessionTitle || ambiguityUserPrompt) {
   console.log(JSON.stringify({
-    success: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
       sessionTitle,

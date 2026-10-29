@@ -23,10 +23,19 @@ const { BKIT_VERSION } = require('../lib/core/version');
 // M10 fix (audit): the layer-6 auditPostHoc call below is intentionally
 // fire-and-forget (PostToolUse must not block tool flow), so it is not awaited.
 // A rejection that resolves AFTER the synchronous hook body completes would
-// surface as a process-level unhandled-rejection. This guard swallows those —
-// the .catch() on the call handles the in-flight case; this handles the
-// post-tick case — keeping observability-only failures from polluting stderr.
-process.on('unhandledRejection', (_reason) => { /* observability-only — see M10 */ });
+// surface as a process-level unhandled-rejection. The .catch() on the call
+// handles the in-flight case; this handler covers the post-tick case.
+//
+// rb021/rb031 (hook-audit-1028): the previous `(_reason) => {}` was a
+// process-wide swallower — the exact pattern lib/core/_io/observability.js:143
+// documents as abandoned (a listener here also suppresses Node 15+ default
+// fatal behavior, so a real async defect was doubly invisible). Log every
+// rejection instead of eating it.
+process.on('unhandledRejection', (reason) => {
+  debugLog('UnifiedWritePost', 'Unhandled rejection', {
+    error: reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason),
+  });
+});
 
 // ============================================================
 // Handler: pdca-post-write (always runs - core bkit-rules)
@@ -49,7 +58,11 @@ function handlePdcaPostWrite(input) {
     // If self-executing, it already ran when required
     return true;
   } catch (e) {
+    // rb021 (hook-audit-1028): a dead PDCA post-write used to vanish into
+    // debugLog alone. This is core bkit-rules functionality — failure must
+    // be LOUD, not silent.
     debugLog('UnifiedWritePost', 'pdca-post-write failed', { error: e.message });
+    console.error(`[bkit] pdca-post-write FAILED: ${e.message}`);
     return false;
   }
 }

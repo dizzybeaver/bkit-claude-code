@@ -8,6 +8,15 @@
 const assert = require('node:assert');
 const pipeline = require('../../scripts/pre-write');
 
+// Test isolation (br879): runPdcaBypassDetection consults the LIVE registry
+// through isSkillOwnedCycleDocWrite — a host session with an active cycle at
+// phase 'check' suppresses the analysis-doc advisory and fails this suite.
+// This file never intends to touch the real registry: point state at an
+// empty scratch for the entire run.
+const os = require('node:os');
+const fs = require('node:fs');
+process.env.CLAUDE_PROJECT_DIR = fs.mkdtempSync(os.tmpdir() + '/pre-write-pipeline-test-');
+
 let pass = 0, fail = 0;
 function test(name, fn) {
   try { fn(); pass++; } catch (e) { fail++; console.error(`✗ ${name}: ${e.message}`); }

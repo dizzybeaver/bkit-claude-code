@@ -232,18 +232,18 @@ test('HIS-16', 'PostToolUseFailure matcher includes Bash|Write|Edit', () => {
 // T17-T18: PreCompact and ConfigChange matchers
 // ---------------------------------------------------------------------------
 
-test('HIS-17', 'PreCompact matcher includes auto|manual', () => {
+test('HIS-17', 'PreCompact registration carries no dead alternation matcher (rb042: matchers are unsupported on this event — handler fires on all payloads and no-ops on irrelevant ones)', () => {
   const entries = hooksJson.hooks.PreCompact;
   const matchers = entries.map(e => e.matcher).filter(Boolean);
-  assert.ok(matchers.some(m => m.includes('auto') && m.includes('manual')),
-    'PreCompact should match auto|manual');
+  assert.ok(matchers.every(m => !m.includes('|')),
+    'PreCompact must not use unsupported | alternation matchers (rb042)');
 });
 
-test('HIS-18', 'ConfigChange matcher includes project_settings|skills', () => {
+test('HIS-18', 'ConfigChange registration carries no dead alternation matcher (rb042)', () => {
   const entries = hooksJson.hooks.ConfigChange;
   const matchers = entries.map(e => e.matcher).filter(Boolean);
-  assert.ok(matchers.some(m => m.includes('project_settings') && m.includes('skills')),
-    'ConfigChange should match project_settings|skills');
+  assert.ok(matchers.every(m => !m.includes('|')),
+    'ConfigChange must not use unsupported | alternation matchers (rb042)');
 });
 
 // ---------------------------------------------------------------------------
@@ -262,11 +262,11 @@ test('HIS-19', 'Both Stop and StopFailure events exist and have separate scripts
 // T20: Notification matcher includes permission_prompt|idle_prompt
 // ---------------------------------------------------------------------------
 
-test('HIS-20', 'Notification matcher includes permission_prompt|idle_prompt', () => {
+test('HIS-20', 'Notification registration carries no dead alternation matcher (rb042)', () => {
   const entries = hooksJson.hooks.Notification;
   const matchers = entries.map(e => e.matcher).filter(Boolean);
-  assert.ok(matchers.some(m => m.includes('permission_prompt') && m.includes('idle_prompt')),
-    'Notification should match permission_prompt|idle_prompt');
+  assert.ok(matchers.every(m => !m.includes('|')),
+    'Notification must not use unsupported | alternation matchers (rb042)');
 });
 
 // ---------------------------------------------------------------------------
