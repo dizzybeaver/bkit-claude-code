@@ -38,10 +38,6 @@ const FORBIDDEN_KEYS = ['hookSpecificOutput', 'skillResult', 'autoTrigger', 'ite
 
 const EMITTERS = [
   { script: 'scripts/sprint-skill-stop.js', payload: { session_id: 't', cwd: projectRoot, stop_hook_active: false, skill_name: 'sprint' } },
-  { script: 'scripts/pdca-skill-stop.js',   payload: { session_id: 't', cwd: projectRoot, stop_hook_active: false, skill_name: 'pdca' } },
-  { script: 'scripts/plan-plus-stop.js',    payload: { session_id: 't', cwd: projectRoot, stop_hook_active: false } },
-  { script: 'scripts/iterator-stop.js',     payload: { session_id: 't', cwd: projectRoot, stop_hook_active: false } },
-  { script: 'scripts/gap-detector-stop.js', payload: { session_id: 't', cwd: projectRoot, stop_hook_active: false } },
 ];
 
 let failures = 0;

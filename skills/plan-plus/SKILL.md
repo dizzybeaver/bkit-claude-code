@@ -246,15 +246,10 @@ Generate the Plan document using `plan-plus.template.md` with results from Phase
 
 **Output Path**: `docs/01-plan/features/{feature}.plan.md`
 
-After document generation, the Stop hook records the phase: `scripts/plan-plus-stop.js`
-writes `phase = "plan"` to `.bkit/state/pdca-status.json` and creates the Task
-chain (`lib/task/creator.js`, which names each Task `<icon> [Plan] {feature}`).
-Do not write the phase by hand, and do not write it to `.bkit-memory.json` —
-that file is the pipeline store, not the PDCA one.
-
-State the document path in your closing output. The hook recovers the feature
-name from it, and without it the phase is recorded against whatever feature was
-current before.
+After document generation, record the phase the same way `/pdca plan` does:
+create Task `[Plan] {feature}`, then update `.bkit/state/pdca-status.json`:
+phase = "plan" for `{feature}`. Do not write it to `.bkit-memory.json` — that
+file is the pipeline store, not the PDCA one.
 
 ### Phase 6: Next Steps
 

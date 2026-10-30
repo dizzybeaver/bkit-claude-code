@@ -6,8 +6,8 @@
  * ${CLAUDE_PLUGIN_ROOT} doesn't expand in markdown files,
  * so all skill/agent stop hooks are consolidated here.
  *
- * v2.0.0: Wired workflow-engine, circuit-breaker, trust-engine,
- * explanation-generator for full PDCA lifecycle integration.
+ * v2.0.0: Wired workflow-engine, trust-engine, explanation-generator for
+ * full PDCA lifecycle integration.
  */
 
 const path = require('path');
@@ -21,7 +21,7 @@ const { normalizeSkillName } = require('../lib/core/skill-name');
 // v2.0.0 Lazy Module Loaders — S3a ENH-346: extracted to scripts/lib/unified-stop-deps.js
 const {
   getStateMachine, getCheckpointManager, getAuditLogger, getGateManager, getMetricsCollector,
-  getWorkflowEngine, getCircuitBreaker, getTrustEngine, getExplanationGenerator, getDecisionTracer,
+  getWorkflowEngine, getTrustEngine, getExplanationGenerator, getDecisionTracer,
 } = require('./lib/unified-stop-deps');
 
 // ============================================================
@@ -37,10 +37,7 @@ const {
  * This registry is retained as fallback for backward compatibility.
  */
 const SKILL_HANDLERS = {
-  'pdca': './pdca-skill-stop.js',
-  'pm-discovery': './pdca-skill-stop.js',  // v1.6.0: PM uses same PDCA stop handler
   'sprint': './sprint-skill-stop.js',  // v2.1.21 (Issue #113): Sprint Exec Summary + AskUserQuestion + sessionTitle
-  'plan-plus': './plan-plus-stop.js',  // v1.5.9: Executive Summary + AskUserQuestion
   'code-review': './code-review-stop.js',
   'phase-8-review': './phase8-review-stop.js',
   'claude-code-learning': './learning-stop.js',
@@ -62,13 +59,11 @@ const SKILL_HANDLERS = {
  * This registry is retained as fallback for backward compatibility.
  */
 const AGENT_HANDLERS = {
-  'gap-detector': './gap-detector-stop.js',
-  'pdca-iterator': './iterator-stop.js',
+  // gap-detector's matchRate is recorded by subagent-stop-handler.js.
   'code-analyzer': './analysis-stop.js',
   'qa-monitor': './qa-stop.js',
   'team-coordinator': './team-stop.js',  // v1.5.1: Team cleanup on stop
   'cto-lead': './cto-stop.js',           // v1.5.1: CTO session cleanup
-  'pm-lead': './pdca-skill-stop.js',    // v1.6.0: PM lead uses PDCA stop handler
   'qa-lead': './qa-phase-stop.js',     // v2.1.1: QA Lead agent stop handler
   // design-validator: PreToolUse only, no Stop handler
 };
@@ -293,20 +288,11 @@ if (!handled && activeSkill && SKILL_HANDLERS[activeSkill]) {
  * for as long as the v3 schema has existed. Nothing logged it, because
  * `if (feature && currentPhase)` skipping is indistinguishable from there being
  * no active cycle.
- *
- * `nextPhase` has no home in the schema at all; it is derived, so it is derived
- * here rather than read from a field that was never written.
  */
 const pdcaStatus = getPdcaStatusFull();
 const feature = pdcaStatus?.primaryFeature || null;
 const featureEntry = feature ? pdcaStatus?.features?.[feature] : null;
 const currentPhase = featureEntry?.phase || null;
-const nextPhase = (() => {
-  if (!currentPhase) return null;
-  try {
-    return require('../lib/pdca/phase').getNextPdcaPhase(currentPhase) || null;
-  } catch (_) { return null; }
-})();
 const matchRate = require('../lib/quality/match-rate').isMeasured(featureEntry?.matchRate)
   ? featureEntry.matchRate
   : null;
@@ -328,17 +314,19 @@ try {
     require('../lib/core/config').getConfig('guardrails.checkpointOnPhaseTransition', true) !== false;
 } catch (_) { /* config unavailable — keep checkpointing */ }
 
-if (feature && currentPhase && nextPhase && _checkpointOnPhaseTransition) {
+/** Checkpoint the feature right before a transition that is about to run. */
+function checkpointBeforeTransition(fromPhase, toPhase) {
+  if (!_checkpointOnPhaseTransition) return;
   try {
     const cp = getCheckpointManager();
     if (cp) {
-      cp.createCheckpoint(feature, currentPhase, 'phase_transition', `${currentPhase} → ${nextPhase}`);
+      cp.createCheckpoint(feature, fromPhase, 'phase_transition', `${fromPhase} → ${toPhase}`);
       // v2.1.1 TC-02: Track checkpoint creation in session stats
       try {
         const { incrementStat } = require('../lib/control/automation-controller');
         incrementStat('checkpointsCreated');
       } catch (_) {}
-      debugLog('UnifiedStop', 'v2.0.0 checkpoint created', { feature, currentPhase, nextPhase });
+      debugLog('UnifiedStop', 'v2.0.0 checkpoint created', { feature, fromPhase, toPhase });
     }
   } catch (_) {}
 }
@@ -350,6 +338,8 @@ if (feature && currentPhase) {
     const gates = getGateManager();
     const metrics = getMetricsCollector();
     if (gates && metrics) {
+      // M1 mirrors status.matchRate, which may have been written by hand.
+      metrics.syncMatchRateMetric(feature, matchRate);
       // Use schema bridge: convert M1-M10 → gate-friendly names
       const gateMetrics = metrics.toGateFormat(feature);
       if (gateMetrics) {
@@ -388,6 +378,7 @@ if (feature && currentPhase) {
 
 // v2.0.5: State machine transition — gate verdict controls the event
 let transitionSuccess = false;
+let transitionTarget = null;
 if (feature && currentPhase) {
   try {
     const sm = getStateMachine();
@@ -431,35 +422,31 @@ if (feature && currentPhase) {
         if (featureData?.chromeAvailable === false && featureData?.qaPassRate == null) {
           event = 'QA_SKIP';
         }
-      } else if (phase === 'pm') {
-        event = 'PM_DONE';
-      } else if (phase === 'plan') {
-        event = 'PLAN_DONE';
-      } else if (phase === 'design') {
-        event = 'DESIGN_DONE';
-      } else if (phase === 'do') {
-        event = 'DO_COMPLETE';
       } else if (phase === 'act') {
         /*
          * A feature that arrived in act because QA rejected it owes QA another
-         * look. Mapping act to ANALYZE_DONE unconditionally sent it back into
-         * the act -> check loop instead, so `act -> qa` (QA_RETRY) — and the
-         * retry counter and initQaPhase hanging off it — were unreachable.
+         * look (QA_RETRY). act -> check is not fired here: it means the gap was
+         * re-measured, and the gap-detector SubagentStop records that.
          */
         const actStatus = getPdcaStatusFull();
-        event = actStatus?.features?.[feature]?.qaRetryPending
-          ? 'QA_RETRY'
-          : 'ANALYZE_DONE';
-      } else if (phase === 'report') {
-        event = 'REPORT_DONE';
+        if (actStatus?.features?.[feature]?.qaRetryPending) event = 'QA_RETRY';
       }
+      /*
+       * Only measured verdicts drive a transition from Stop. A Stop ends a turn,
+       * not a phase: pm/plan/design/do have no measurement here, and report ends
+       * with an explicit `/pdca archive`. Firing those events every turn wrote a
+       * transition to history (and a checkpoint) without ever moving the phase.
+       */
 
-      if (event) {
-        sm.transition(phase, event, ctx);
-        transitionSuccess = true;
-        debugLog('UnifiedStop', 'v2.0.5 state machine transition', { feature, phase, event, gateVerdict });
-      } else if (gateVerdict === 'fail') {
-        debugLog('UnifiedStop', 'v2.0.5 transition BLOCKED by gate', { feature, phase, gateVerdict });
+      if (event && sm.canTransition(phase, event, ctx)) {
+        const target = sm.findTransition(phase, event)?.to || null;
+        checkpointBeforeTransition(phase, target);
+        const result = sm.transition(phase, event, ctx);
+        transitionSuccess = result.success === true;
+        transitionTarget = transitionSuccess ? result.currentState : null;
+        debugLog('UnifiedStop', 'v2.0.5 state machine transition', { feature, phase, event, gateVerdict, result: transitionSuccess });
+      } else if (event) {
+        debugLog('UnifiedStop', 'v2.0.5 transition BLOCKED by guard', { feature, phase, event, gateVerdict });
       }
     }
   } catch (e) {
@@ -494,33 +481,14 @@ if (feature && currentPhase && transitionSuccess) {
   } catch (_) { /* non-critical */ }
 }
 
-// v2.0.0: Circuit breaker recording based on transition result
-if (feature) {
-  try {
-    const cb = getCircuitBreaker();
-    if (cb) {
-      if (transitionSuccess) {
-        cb.recordSuccess(feature);
-      } else if (currentPhase) {
-        // Only record failure if a transition was attempted but failed
-        cb.recordFailure(feature, 'State machine transition failed');
-      }
-      debugLog('UnifiedStop', 'v2.0.0 circuit breaker updated', {
-        feature,
-        success: transitionSuccess
-      });
-    }
-  } catch (_) { /* non-critical */ }
-}
-
 // v2.0.0: Trust engine event recording for completed transitions
 if (feature && transitionSuccess) {
   try {
     const te = getTrustEngine();
     if (te) {
       // Record PDCA cycle completion when transitioning to report/completed
-      if (nextPhase === 'report' || nextPhase === 'completed' || nextPhase === 'archived') {
-        te.recordEvent('pdca_complete', { feature, from: currentPhase, to: nextPhase });
+      if (transitionTarget === 'report' || transitionTarget === 'completed' || transitionTarget === 'archived') {
+        te.recordEvent('pdca_complete', { feature, from: currentPhase, to: transitionTarget });
       }
       // Record gate pass/fail based on quality gate results.
       //
@@ -538,7 +506,7 @@ if (feature && transitionSuccess) {
       }
       // v2.1.1 TC-01: Sync trust score to control-state.json
       te.syncToControlState();
-      debugLog('UnifiedStop', 'v2.1.1 trust synced to control-state', { feature, currentPhase, nextPhase });
+      debugLog('UnifiedStop', 'v2.1.1 trust synced to control-state', { feature, currentPhase, transitionTarget });
     }
   } catch (_) { /* non-critical */ }
 }
@@ -631,13 +599,13 @@ if (handled || feature) {
       audit.writeAuditLog({
         actor: 'system',
         actorId: agentName || 'unified-stop',
-        action: feature && nextPhase ? 'phase_transition' : 'stop_event',
+        action: transitionTarget ? 'phase_transition' : 'stop_event',
         category: 'pdca',
         target: feature || activeSkill || activeAgent || 'unknown',
         targetType: 'feature',
         details: {
           from: currentPhase,
-          to: nextPhase,
+          to: transitionTarget,
           matchRate,
           activeSkill,
           activeAgent,
@@ -646,7 +614,7 @@ if (handled || feature) {
         result: 'success',
         destructiveOperation: false
       });
-      debugLog('UnifiedStop', 'v2.0.0 audit log written', { action: feature && nextPhase ? 'phase_transition' : 'stop_event' });
+      debugLog('UnifiedStop', 'v2.0.0 audit log written', { action: transitionTarget ? 'phase_transition' : 'stop_event' });
     }
   } catch (_) {}
 

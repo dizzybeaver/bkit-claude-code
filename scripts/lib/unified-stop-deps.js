@@ -47,12 +47,6 @@ function getWorkflowEngine() {
   return _workflowEngine;
 }
 
-let _circuitBreaker = null;
-function getCircuitBreaker() {
-  if (!_circuitBreaker) try { _circuitBreaker = require('../../lib/pdca/circuit-breaker'); } catch (_) {}
-  return _circuitBreaker;
-}
-
 let _trustEngine = null;
 function getTrustEngine() {
   if (!_trustEngine) try { _trustEngine = require('../../lib/control/trust-engine'); } catch (_) {}
@@ -78,7 +72,6 @@ module.exports = {
   getGateManager,
   getMetricsCollector,
   getWorkflowEngine,
-  getCircuitBreaker,
   getTrustEngine,
   getExplanationGenerator,
   getDecisionTracer,
