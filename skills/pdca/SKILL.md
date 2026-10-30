@@ -95,7 +95,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 
 ### plan (Plan Phase)
 
-0. **Template Loading**: Read `templates/plan.template.md` to understand the required Plan document structure and sections. Use this template's sections as your document outline. This is MANDATORY — do not generate Plan documents from memory or assumptions.
+0. **Template Loading**: Read `${CLAUDE_PLUGIN_ROOT}/templates/plan.template.md` to understand the required Plan document structure and sections. Use this template's sections as your document outline. This is MANDATORY — do not generate Plan documents from memory or assumptions.
 1. **PRD Auto-Reference**: Check if `docs/00-pm/{feature}.prd.md` exists
    - If found: Read PRD and use as context for Plan document (improves quality significantly)
    - If not found: Proceed normally (tip: run `/pdca pm {feature}` first for better results)
@@ -119,7 +119,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 
 ### design (Design Phase)
 
-0. **Template Loading**: Read `templates/design.template.md` to understand the required Design document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Design documents from memory or assumptions.
+0. **Template Loading**: Read `${CLAUDE_PLUGIN_ROOT}/templates/design.template.md` to understand the required Design document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Design documents from memory or assumptions.
 1. Verify Plan document exists (required - suggest running plan first if missing)
 2. Read Plan document to understand requirements and scope
 3. **PRD Context Loading**: Check if `docs/00-pm/{feature}.prd.md` exists. If found, read the Executive Summary and Beachhead/GTM sections to inform architecture decisions with market context. This prevents strategic context loss at the Plan→Design handoff.
@@ -303,7 +303,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 
 ### report (Completion Report)
 
-0. **Template Loading**: Read `templates/report.template.md` to understand the required Report document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Report documents from memory or assumptions.
+0. **Template Loading**: Read `${CLAUDE_PLUGIN_ROOT}/templates/report.template.md` to understand the required Report document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Report documents from memory or assumptions.
 1. Verify Check >= 90% (warn if below)
 2. **Full Upstream Context Loading (Phase 2+3)**: Load ALL upstream documents for comprehensive reporting:
    - Read PRD — compare original value proposition vs delivered value

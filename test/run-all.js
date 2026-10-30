@@ -336,6 +336,8 @@ const CATEGORIES = {
       'regression/subagent-stop-handler.test.js',
       // Release verifier check K skips on a clone without untracked .bkit state.
       'regression/verify-full-system-skip.test.js',
+      // Skill instructions reach templates through ${CLAUDE_PLUGIN_ROOT}.
+      'regression/skill-template-paths.test.js',
     ],
     expected: 688,
   },
