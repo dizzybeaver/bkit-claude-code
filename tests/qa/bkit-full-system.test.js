@@ -194,12 +194,6 @@ tc('B3. scripts/post-compaction.js exits 0 (no PDCA state)', () => {
   assert.strictEqual(r.code, 0, `exit ${r.code}. stderr=${r.stderr.slice(0, 200)}`);
 });
 
-tc('B4. scripts/pdca-skill-stop.js exits 0 (no active PDCA)', () => {
-  const r = runHook('scripts/pdca-skill-stop.js', { hook_event_name: 'Stop' });
-  // exit 0 or graceful silent exit acceptable
-  assert(r.code === 0 || r.code === null, `exit ${r.code}. stderr=${r.stderr.slice(0, 200)}`);
-});
-
 tc('B5. scripts/context-compaction.js (PreCompact) exits 0 with no PDCA', () => {
   const r = runHook('scripts/context-compaction.js', {
     hook_event_name: 'PreCompact',

@@ -125,8 +125,8 @@ assert('QF-010', typeof transitions.ACTIONS.markQaRetryPending === 'function',
 const stopSrc = read('scripts/unified-stop.js');
 assert('QF-011', /qaRetryPending[\s\S]{0,80}QA_RETRY/.test(stopSrc),
   'unified-stop emits QA_RETRY when a retry is pending');
-assert('QF-012', /ANALYZE_DONE/.test(stopSrc),
-  'ANALYZE_DONE remains the path for an ordinary act completion');
+assert('QF-012', !/ANALYZE_DONE/.test(stopSrc),
+  'Stop does not fire act -> check; the gap-detector re-measurement records it');
 
 // initQaPhase advances the counter on retry, and only on retry.
 const FEATURE = 'qa-followup-feature';

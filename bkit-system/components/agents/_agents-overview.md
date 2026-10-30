@@ -231,11 +231,11 @@ hooks:
 
 | Agent | PreToolUse | PostToolUse | Stop |
 |-------|-----------|-------------|------|
-| [[../../../agents/gap-detector|gap-detector]] | - | - | `gap-detector-stop.js` |
+| [[../../../agents/gap-detector|gap-detector]] | - | - | - (matchRate recorded by `subagent-stop-handler.js`) |
 | [[../../../agents/design-validator|design-validator]] | `design-validator-pre.js` | - | - |
 | [[../../../agents/code-analyzer|code-analyzer]] | Block (read-only) | - | `analysis-stop.js` |
 | [[../../../agents/qa-monitor|qa-monitor]] | `qa-pre-bash.js` | `qa-monitor-post.js` | `qa-stop.js` |
-| [[../../../agents/pdca-iterator|pdca-iterator]] | - | - | `iterator-stop.js` |
+| [[../../../agents/pdca-iterator|pdca-iterator]] | - | - | - |
 
 ---
 

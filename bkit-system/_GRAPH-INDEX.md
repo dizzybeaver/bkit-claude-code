@@ -212,8 +212,6 @@ The following skills were consolidated:
 ### Agent Scripts (5)
 - `scripts/design-validator-pre.js` - Design document validation
 - `scripts/gap-detector-post.js` - Gap analysis guidance
-- `scripts/gap-detector-stop.js` - Gap detector completion
-- `scripts/iterator-stop.js` - Iterator completion
 - `scripts/analysis-stop.js` - Analysis completion guidance
 
 ### Utility Scripts (4)

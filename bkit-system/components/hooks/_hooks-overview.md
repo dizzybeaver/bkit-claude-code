@@ -353,9 +353,7 @@ PreCompact (when context limit reached) (v1.4.2)
 | PreToolUse | `pre-write.js` | `lib/common.js` (→ `lib/pdca/`, `lib/task/`) |
 | PostToolUse | `pdca-post-write.js` | `lib/common.js` (→ `lib/pdca/`) |
 | PreCompact | `context-compaction.js` | `lib/common.js` (→ `lib/pdca/`) |
-| Stop (gap-detector) | `gap-detector-stop.js` | `lib/common.js` (→ `lib/task/`) |
-| Stop (iterator) | `iterator-stop.js` | `lib/common.js` (→ `lib/task/`) |
-| Stop (pdca-skill) | `pdca-skill-stop.js` | `lib/common.js` (→ `lib/task/`) |
+| SubagentStop (gap-detector) | `subagent-stop-handler.js` | `lib/quality/match-rate.js`, `lib/pdca/status` |
 
 **Note (v1.4.7)**: `lib/common.js` acts as Migration Bridge, re-exporting all modules for backward compatibility.
 
@@ -392,9 +390,6 @@ These scripts are available for skill frontmatter hooks or manual use:
 | Script | Event | Agent | Purpose |
 |--------|-------|-------|---------|
 | `design-validator-pre.js` | PreToolUse | design-validator | Design document validation |
-| `gap-detector-stop.js` | Stop | gap-detector | Check-Act iteration: triggerNextPdcaAction (v1.4.7) |
-| `iterator-stop.js` | Stop | pdca-iterator | Check-Act iteration: triggerNextPdcaAction (v1.4.7) |
-| `pdca-skill-stop.js` | Stop | pdca skill | Task Chain Auto-Creation (v1.4.7) |
 | `analysis-stop.js` | Stop | code-analyzer | Analysis completion guidance |
 | `qa-pre-bash.js` | PreToolUse | qa-monitor | Block destructive commands |
 | `qa-monitor-post.js` | PostToolUse | qa-monitor | Critical issue notification |
