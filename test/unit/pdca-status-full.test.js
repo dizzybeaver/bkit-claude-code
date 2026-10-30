@@ -15,6 +15,28 @@ reset();
 
 console.log('\n=== pdca-status-full.test.js (25 TC) ===\n');
 
+// PS-020 counts features, so the project state must not depend on the checkout:
+// seed a throwaway project with one feature. CLAUDE_PROJECT_DIR is read once by
+// lib/core/platform, so set it before the first lib require.
+const TMP_PROJECT = fs.mkdtempSync(path.join(require('os').tmpdir(), 'bkit-status-full-'));
+fs.mkdirSync(path.join(TMP_PROJECT, '.bkit', 'state'), { recursive: true });
+fs.writeFileSync(path.join(TMP_PROJECT, '.bkit', 'state', 'pdca-status.json'), JSON.stringify({
+  version: '2.0',
+  activeFeatures: ['seeded-feature'],
+  primaryFeature: 'seeded-feature',
+  features: {
+    'seeded-feature': {
+      phase: 'plan', phaseNumber: 1,
+      timestamps: { started: new Date().toISOString(), lastUpdated: new Date().toISOString() },
+    },
+  },
+  pipeline: {}, session: {}, history: [],
+}, null, 2));
+process.env.CLAUDE_PROJECT_DIR = TMP_PROJECT;
+process.on('exit', () => {
+  try { fs.rmSync(TMP_PROJECT, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+});
+
 // Load module
 let status;
 try {
@@ -420,6 +442,39 @@ console.log('\n--- Section 19: extractFeatureFromContext ---');
       'extractFeatureFromContext returns string fallback from primaryFeature');
   } else {
     skip('PS-027', 'Module not loaded');
+  }
+}
+
+// ============================================================
+// Section 20: removeActiveFeature primary succession (PS-028)
+// ============================================================
+console.log('\n--- Section 20: removeActiveFeature primary succession ---');
+
+// PS-028: removing the primary promotes the most recently updated remaining
+// feature, not the oldest entry of activeFeatures
+{
+  if (moduleLoaded) {
+    const statusFile = path.join(TMP_PROJECT, '.bkit', 'state', 'pdca-status.json');
+    const day = (d) => new Date(Date.now() - d * 86400000).toISOString();
+    const stamped = (phase, n, started, lastUpdated) => ({ phase, phaseNumber: n, timestamps: { started, lastUpdated } });
+    fs.writeFileSync(statusFile, JSON.stringify({
+      version: '2.0',
+      activeFeatures: ['old-a', 'newest-b', 'older-c', 'primary-d'],
+      primaryFeature: 'primary-d',
+      features: {
+        'old-a': stamped('design', 2, day(30), day(29)),
+        'newest-b': stamped('do', 3, day(2), day(0.1)),
+        'older-c': stamped('plan', 1, day(20), day(15)),
+        'primary-d': stamped('report', 6, day(5), day(0.01)),
+      },
+      pipeline: {}, session: {}, history: [],
+    }, null, 2));
+    status.removeActiveFeature('primary-d');
+    const after = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+    assert('PS-028', after.primaryFeature === 'newest-b',
+      `removeActiveFeature promotes the most recently updated feature (got ${after.primaryFeature})`);
+  } else {
+    skip('PS-028', 'Module not loaded');
   }
 }
 

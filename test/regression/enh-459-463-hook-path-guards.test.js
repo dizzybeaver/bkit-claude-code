@@ -244,5 +244,37 @@ test('HP-34 real environment files are still refused (ENH-464 stays narrow)', ()
   }
 });
 
-console.log(`\n--- Results: ${passed}/${passed + failed} passed, ${failed} failed ---`);
+// pre-write annotates a destructive pattern but never blocks, so its audit
+// entry must say the write was allowed — not blocked.
+test('HP-35 pre-write audit entry for a destructive-pattern write says allowed', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-prewrite-audit-'));
+  try {
+    const payload = JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path: 'db/drop.sql', content: `${DELFROM} users;` },
+      cwd: tmp,
+      session_id: 'hook-path-audit',
+    });
+    spawnSync('node', [PRE_WRITE], {
+      input: payload, encoding: 'utf8', timeout: 30000,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: tmp },
+    });
+    const auditDir = path.join(tmp, '.bkit', 'audit');
+    const files = fs.existsSync(auditDir) ? fs.readdirSync(auditDir) : [];
+    const entries = files.flatMap((f) => fs.readFileSync(path.join(auditDir, f), 'utf8')
+      .split('\n').filter(Boolean).map((l) => JSON.parse(l)));
+    const entry = entries.find((e) => e.actorId === 'pre-write');
+    assert.ok(entry, 'pre-write must write an audit entry for a destructive-pattern write');
+    assert.equal(entry.action, 'destructive_observed');
+    assert.equal(entry.result, 'success');
+    assert.equal(entry.destructiveOperation, false);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+console.log(`\n--- Results:${passed}/${passed + failed} passed, ${failed} failed ---`);
 if (failed > 0) process.exit(1);

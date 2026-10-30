@@ -250,13 +250,15 @@ function runDestructiveDetector(ctx) {
         audit.writeAuditLog({
           actor: 'hook',
           actorId: 'pre-write',
-          action: 'destructive_blocked',
+          // pre-write only annotates; the write proceeds, so 'blocked' would
+          // record a prevention that never happened.
+          action: 'destructive_observed',
           category: 'control',
           target: toolInput.file_path || '',
           targetType: 'file',
           details: { rules: result.rules },
-          result: 'blocked',
-          destructiveOperation: true,
+          result: 'success',
+          destructiveOperation: false,
           blastRadius: 'medium',
         });
       } catch (e) {
