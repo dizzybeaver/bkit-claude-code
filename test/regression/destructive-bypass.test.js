@@ -339,6 +339,11 @@ test('ISSUE-161 backslash-newline continuation inside a body is joined before gr
   assert.ok(hasCritical(['cat > /tmp/x <<EOF', `$(${verb} \\`, `${target})`, 'EOF'].join('\n')));
 });
 
+test('ISSUE-161 an escaped backslash at end of line is not a continuation', () => {
+  // `x\\` ends in a literal backslash, so the next line's $() still runs.
+  assert.ok(hasCritical(['cat > /tmp/x <<EOF', 'x\\\\', `$(${DEL_HOME})`, 'EOF'].join('\n')));
+});
+
 test('ISSUE-161 quoted-tag heredoc body stays inert (issue #145)', () => {
   assert.strictEqual(verdict(["cat > /tmp/x <<'EOF'", `$(${DEL_HOME})`, 'EOF'].join('\n')).detected, false);
   assert.strictEqual(verdict(['cat > /tmp/x <<"EOF"', `$(${DEL_HOME})`, 'EOF'].join('\n')).detected, false);
