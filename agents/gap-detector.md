@@ -541,7 +541,7 @@ Non-frontend projects (UX axis disabled, weight redistributed to Intent):
 Weight validation: all weights MUST sum to 1.00.
 
 CRITICAL: The "Overall" line in your report output MUST use this formula.
-The gap-detector-stop.js parses "Overall" or "Match Rate" followed by a percentage.
+bkit reads the `- Analysis Target:` line and the `Overall Match Rate` table row of this report format, so each must appear exactly once.
 ```
 
 #### 8.5 Semantic Evaluation Procedure

@@ -19,7 +19,8 @@ Next steps:
 3. If match rate >= 90%: Proceed to next phase
 4. Update design doc if implementation differs intentionally`;
 
-// v2.0.5: Comprehensive metrics collection (M1, M2, M3, M7)
+// Code-analyzer metrics (M2, M3, M7). M1 belongs to the gap-detector and is
+// recorded by subagent-stop-handler.js.
 try {
   const { readStdinSync, readHookText } = require('../lib/core/io');
   const mc = require('../lib/quality/metrics-collector');
@@ -27,12 +28,6 @@ try {
   const currentStatus = getPdcaStatusFull();
   const feature = extractFeatureFromContext({ currentStatus });
   const f = feature || 'unknown';
-  const matchRate = currentStatus.features?.[feature]?.matchRate || 0;
-
-  // M1: Match Rate (from pdca-status, set by gap-detector)
-  if (matchRate > 0) {
-    mc.collectMetric('M1', f, matchRate, 'code-analyzer');
-  }
 
   /*
    * Read the ANALYZER's output, not our own.
