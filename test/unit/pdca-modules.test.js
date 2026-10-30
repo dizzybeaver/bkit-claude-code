@@ -2,7 +2,7 @@
 'use strict';
 /**
  * Unit Tests for lib/pdca/ untested modules
- * 30 TC | automation.js, executive-summary.js, tier.js, template-validator.js
+ * 26 TC | automation.js, executive-summary.js, tier.js, template-validator.js
  *
  * @version bkit v2.0.0
  */
@@ -11,7 +11,7 @@ const path = require('path');
 const { assert, skip, summary, reset } = require('../helpers/assert');
 reset();
 
-console.log('\n=== pdca-modules.test.js (30 TC) ===\n');
+console.log('\n=== pdca-modules.test.js (26 TC) ===\n');
 
 // Load modules
 let automation, executiveSummary, tier, templateValidator;
@@ -50,12 +50,6 @@ const tvLoaded = templateValidator !== null;
 // ============================================================
 console.log('\n--- Section 1: automation.js ---');
 
-// PM-001: Module exports emitUserPrompt function
-{
-  assert('PM-001', autoLoaded && typeof automation.emitUserPrompt === 'function',
-    'automation exports emitUserPrompt');
-}
-
 // PM-002: Module exports formatAskUserQuestion function
 {
   assert('PM-002', autoLoaded && typeof automation.formatAskUserQuestion === 'function',
@@ -66,39 +60,6 @@ console.log('\n--- Section 1: automation.js ---');
 {
   assert('PM-003', autoLoaded && typeof automation.detectPdcaFromTaskSubject === 'function',
     'automation exports detectPdcaFromTaskSubject');
-}
-
-// PM-004: emitUserPrompt returns string
-{
-  if (autoLoaded) {
-    const result = automation.emitUserPrompt({ message: 'hello' });
-    assert('PM-004', typeof result === 'string' && result.includes('hello'),
-      'emitUserPrompt returns string containing message');
-  } else {
-    skip('PM-004', 'Module not loaded');
-  }
-}
-
-// PM-005: emitUserPrompt with feature and phase
-{
-  if (autoLoaded) {
-    const result = automation.emitUserPrompt({ feature: 'test-feat', phase: 'plan' });
-    assert('PM-005', result.includes('test-feat') && result.includes('plan'),
-      'emitUserPrompt includes feature and phase');
-  } else {
-    skip('PM-005', 'Module not loaded');
-  }
-}
-
-// PM-006: emitUserPrompt with suggestions
-{
-  if (autoLoaded) {
-    const result = automation.emitUserPrompt({ suggestions: ['Do X', 'Do Y'] });
-    assert('PM-006', result.includes('Do X') && result.includes('Do Y'),
-      'emitUserPrompt includes suggestions');
-  } else {
-    skip('PM-006', 'Module not loaded');
-  }
 }
 
 // PM-007: detectPdcaFromTaskSubject parses [Plan] subject

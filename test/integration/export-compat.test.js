@@ -85,7 +85,7 @@ assert('TC-EC-05',
 const taskExportCount = Object.keys(task).length;
 const intentExportCount = Object.keys(intent).length;
 assert('TC-EC-06',
-  taskExportCount >= 26 && intentExportCount >= 19,
+  taskExportCount >= 22 && intentExportCount >= 19,
   `task/index.js has ${taskExportCount} exports, intent/index.js has ${intentExportCount} exports`
 );
 
@@ -229,9 +229,8 @@ assert('TC-EC-21',
 // TC-EC-22: PDCA Automation exports exist in pdca/index.js
 assert('TC-EC-22',
   typeof pdca.shouldAutoAdvance === 'function' &&
-  typeof pdca.emitUserPrompt === 'function' &&
   typeof pdca.detectPdcaFromTaskSubject === 'function',
-  'PDCA Automation exports (shouldAutoAdvance, emitUserPrompt, detectPdcaFromTaskSubject) exist in pdca/index.js'
+  'PDCA Automation exports (shouldAutoAdvance, detectPdcaFromTaskSubject) exist in pdca/index.js'
 );
 
 // TC-EC-23: PDCA Executive Summary exports exist in pdca/index.js

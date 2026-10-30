@@ -80,7 +80,7 @@ const PDCA_MODULES = [
   'lib/pdca/level.js', 'lib/pdca/tier.js', 'lib/pdca/automation.js',
   'lib/pdca/state-machine.js', 'lib/pdca/workflow-engine.js',
   'lib/pdca/feature-manager.js', 'lib/pdca/lifecycle.js',
-  'lib/pdca/batch-orchestrator.js', 'lib/pdca/circuit-breaker.js',
+  'lib/pdca/batch-orchestrator.js',
   'lib/pdca/do-detector.js', 'lib/pdca/executive-summary.js',
   'lib/pdca/full-auto-do.js', 'lib/pdca/resume.js',
   'lib/pdca/template-validator.js', 'lib/pdca/workflow-parser.js',

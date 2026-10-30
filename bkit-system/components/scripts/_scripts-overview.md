@@ -24,7 +24,7 @@
 > **v2.1.10**: Sprint 5a~7 complete — BKIT_VERSION centralization (5-location single SoT), 3-Layer Orchestration (`lib/orchestrator/` 5 new modules), legacy cleanup (removed 3 modules: hook-io / ops-metrics / deploy-state-machine), new `cc-bridge.js` Port↔Adapter, MCP stdio L3 runtime runner (42 TC), `check-domain-purity.js` CI step. Scripts 43→47. CC recommended: v2.1.117+.
 > **v2.1.9**: CC v2.1.116 response — Scripts unchanged (43). ENH-254 `config-change-handler.js:17-29` defense-in-depth comment reinforced (5 DANGEROUS_PATTERNS + Layer 1/Layer 2 architecture). Positive drift: ENH-264 `unified-bash-pre.js:144,183` `outputBlockWithContext` calls (deploy/QA phase paths). CC recommended: v2.1.116+.
 > **v2.1.8**: Issue #81 hotfix - scripts unchanged (43). Focus was `hooks/session-start.js` (ENH-239 fingerprint dedup integration) + `hooks/startup/session-context.js` (ENH-238/240 guard + budget). Two new `lib/core/` modules: `context-budget.js` (95 LOC) + `session-ctx-fp.js` (115 LOC).
-> **v2.1.7**: Issue #79 hotfix - `skill-post.js` argument order, `pre-write.js` phantom feature guard, `gap-detector-stop.js` analysis doc auto-generation.
+> **v2.1.7**: Issue #79 hotfix - `skill-post.js` argument order and `pre-write.js` phantom feature guard.
 >
 > **v1.5.0**: Claude Code Exclusive - Gemini CLI support removed, simplified architecture
 > **v1.4.7**: Core Modularization - lib/ split into 4 modules, Task Management Integration
@@ -154,8 +154,6 @@ bkit-claude-code/
 │   │
 │   ├── design-validator-pre.js    # Agent: Design validation
 │   ├── gap-detector-post.js       # Agent: Gap analysis guidance
-│   ├── gap-detector-stop.js       # Agent: Gap detector completion (v1.3.0)
-│   ├── iterator-stop.js           # Agent: Iterator completion (v1.3.0)
 │   ├── analysis-stop.js           # Agent: Analysis completion
 │   ├── code-analyzer-pre.js       # Agent: Code analyzer read-only block (v1.4.2)
 │   │
@@ -218,14 +216,11 @@ bkit-claude-code/
 | Script | Hook | Agent(s) | Purpose |
 |--------|------|----------|---------|
 | design-validator-pre.js | PreToolUse | design-validator | Design document checklist |
-| gap-detector-stop.js | Stop | gap-detector | Check-Act iteration: triggerNextPdcaAction (v1.4.7) |
-| iterator-stop.js | Stop | pdca-iterator | Check-Act iteration: triggerNextPdcaAction (v1.4.7) |
-| pdca-skill-stop.js | Stop | pdca skill | Task Chain Auto-Creation (v1.4.7) |
 | analysis-stop.js | Stop | code-analyzer | Analysis completion guidance |
 | qa-pre-bash.js | PreToolUse | qa-monitor | Block destructive commands during QA |
 | qa-monitor-post.js | PostToolUse | qa-monitor | Critical issue notification |
 
-> **Note (v1.4.7)**: `gap-detector-stop.js` and `iterator-stop.js` now use `triggerNextPdcaAction()` for automatic next phase triggering. `pdca-skill-stop.js` creates Task Chain on `/pdca plan`.
+> **Note**: The gap-detector matchRate and metric M1 are recorded by `subagent-stop-handler.js` (`recordGapMeasurement`, using `parseGapReport` in `lib/quality/match-rate.js`). PDCA phases are written by the model per `skills/pdca/SKILL.md` and `skills/plan-plus/SKILL.md`.
 
 ### Utility Scripts (3)
 
@@ -276,7 +271,7 @@ bkit-claude-code/
 const { debugLog, getConfig } = require('./lib/core');
 const { getPdcaStatusFull, updatePdcaStatus } = require('./lib/pdca');
 const { matchImplicitAgentTrigger } = require('./lib/intent');
-const { classifyTask, createPdcaTaskChain } = require('./lib/task');
+const { classifyTask } = require('./lib/task');
 
 // Legacy: Still supported via Migration Bridge
 const common = require('./lib/common');
@@ -419,9 +414,7 @@ common.getCurrentPdcaPhase('login');              // Get current phase
 // v1.4.7 Task Chain Functions
 common.savePdcaTaskId('login', 'plan', 'task-123'); // Save Task ID
 common.getPdcaTaskId('login', 'plan');              // Get Task ID
-common.createPdcaTaskChain('login');                // Create Plan→Design→Do→Check→Report chain
 common.getTaskChainStatus('login');                 // Get Task chain status
-common.triggerNextPdcaAction('login', 'check', { matchRate: 85 }); // Trigger next action
 
 // v1.4.7 Full-Auto Mode
 common.getAutomationLevel();                        // 'manual' | 'semi-auto' | 'full-auto'

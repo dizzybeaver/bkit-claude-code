@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Philosophy Tests: Automation First Principle (15 TC)
+ * Philosophy Tests: Automation First Principle (13 TC)
  * Tests that bkit auto-detects, auto-suggests, and auto-creates
  * without requiring manual user intervention where possible
  *
@@ -89,20 +89,6 @@ const intent = trigger.detectNewFeatureIntent('implement a new user authenticati
 assert('PHI-AF-007',
   intent.isNewFeature === true,
   'New feature intent auto-detected from "implement" + "new" keywords'
-);
-
-// --- PHI-AF-008: autoCreatePdcaTask — 자동 task 생성 ---
-const task = taskCreator.autoCreatePdcaTask('test-feature', 'plan');
-assert('PHI-AF-008',
-  typeof task === 'object' && task.id && task.subject && task.status === 'pending',
-  'autoCreatePdcaTask auto-creates task with id, subject, and pending status'
-);
-
-// --- PHI-AF-009: autoCreatePdcaTask — phase별 subject 자동 생성 ---
-const taskDesign = taskCreator.autoCreatePdcaTask('my-feature', 'design');
-assert('PHI-AF-009',
-  taskDesign.subject.includes('Design') && taskDesign.subject.includes('my-feature'),
-  'autoCreatePdcaTask auto-generates phase-appropriate subject'
 );
 
 // --- PHI-AF-010: generatePdcaTaskSubject — 모든 phase에 대해 자동 생성 ---

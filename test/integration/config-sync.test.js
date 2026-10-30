@@ -5,7 +5,7 @@
  * @version 2.0.0
  *
  * Verifies bkit.config.json values are correctly consumed by runtime modules.
- * 30 TC (v1.6.1) + 15 TC (v2.0.0): Config → Code synchronization
+ * 26 TC (v1.6.1) + 15 TC (v2.0.0): Config → Code synchronization
  */
 
 const fs = require('fs');
@@ -17,7 +17,7 @@ const CONFIG_PATH = path.join(PROJECT_ROOT, 'bkit.config.json');
 
 // ============================================================
 // v2.1.26 (I-13, test isolation): all PROJECT_DIR-anchored writes
-// (pdca-status.json via createPdcaTaskChain, audit, state) must land in a
+// (pdca-status.json, audit, state) must land in a
 // throwaway tmp root — never in the repo's real .bkit. CLAUDE_PROJECT_DIR
 // is captured by lib/core/platform at FIRST import, so this block must run
 // BEFORE any lib/ module is required. bkit.config.json is copied into the
@@ -54,7 +54,6 @@ const orchestrator = require(path.join(PROJECT_ROOT, 'lib/team/orchestrator'));
 const coordinator = require(path.join(PROJECT_ROOT, 'lib/team/coordinator'));
 const ambiguity = require(path.join(PROJECT_ROOT, 'lib/intent/ambiguity'));
 const trigger = require(path.join(PROJECT_ROOT, 'lib/intent/trigger'));
-const creator = require(path.join(PROJECT_ROOT, 'lib/task/creator'));
 const phase = require(path.join(PROJECT_ROOT, 'lib/pdca/phase'));
 const coreConfig = require(path.join(PROJECT_ROOT, 'lib/core/config'));
 const strategy = require(path.join(PROJECT_ROOT, 'lib/team/strategy'));
@@ -230,7 +229,7 @@ assert('TC-CS-22',
 );
 
 // ============================================================
-// Section 4: PDCA_PHASES → creator.js phases (TC 23-30)
+// Section 4: PDCA_PHASES and pdca config (TC 23, 28-30)
 // ============================================================
 
 // TC-CS-23: PDCA_PHASES has expected phases
@@ -239,33 +238,6 @@ assert('TC-CS-23',
   phaseKeys.includes('plan') && phaseKeys.includes('design') && phaseKeys.includes('do') &&
   phaseKeys.includes('check') && phaseKeys.includes('act') && phaseKeys.includes('report'),
   'PDCA_PHASES includes plan, design, do, check, act, report'
-);
-
-// TC-CS-24: createPdcaTaskChain filters out pm and archived
-const chain = creator.createPdcaTaskChain('test-feature-sync');
-assert('TC-CS-24',
-  !chain.phases.includes('pm') && !chain.phases.includes('archived'),
-  'createPdcaTaskChain phases exclude pm and archived'
-);
-
-// TC-CS-25: createPdcaTaskChain phases derived from PDCA_PHASES keys
-const expectedChainPhases = Object.keys(phase.PDCA_PHASES)
-  .filter(p => !['pm', 'archived'].includes(p));
-assert('TC-CS-25',
-  JSON.stringify(chain.phases) === JSON.stringify(expectedChainPhases),
-  'createPdcaTaskChain phases match PDCA_PHASES keys (minus pm/archived)'
-);
-
-// TC-CS-26: Each phase in chain has a task object
-assert('TC-CS-26',
-  chain.phases.every(p => chain.tasks[p] != null),
-  'Every phase in chain has a corresponding task'
-);
-
-// TC-CS-27: Task chain blockedBy forms proper dependency
-assert('TC-CS-27',
-  chain.tasks.plan.blockedBy.length === 0 && chain.tasks.design.blockedBy.length === 1,
-  'Plan has no blockers, Design has 1 blocker (Plan task)'
 );
 
 // TC-CS-28: Config pdca.matchRateThreshold accessible via getConfig
