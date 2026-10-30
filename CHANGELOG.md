@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.41] - 2026-10-31
+
+### Fixed — PDCA state has one writer, and a phase moves only on a measurement (#164)
+
+Each PDCA state value had several writers, and none was tied to a measurement.
+Stop fired a phase event every turn, so a turn ending looked like a phase
+ending, and matchRate had no automatic writer: it depended on the model copying
+a number by hand.
+
+- **matchRate is recorded where gap-detector stops.** SubagentStop parses the
+  report strictly (one `Analysis Target` line, one `Overall Match Rate` row,
+  0–100) or writes nothing. `status.matchRate` is the single record and metric
+  M1 mirrors it, so a value written through the documented fallback reaches
+  the gate too.
+- **Stop moves a phase only on a verdict.** check and qa move on the gate; act
+  moves to qa only on a pending QA retry. The guard is checked before the
+  transition, success comes from the transition result, and a checkpoint is
+  written only for a transition that runs.
+- **The caller re-measures after `pdca-iterator`.** A subagent cannot start
+  another agent, so the iterator's own gap-detector re-run never happened. One
+  iterator call is one fix cycle; `/pdca iterate` and cto-lead's Act phase
+  re-run gap-detector until the check gate passes or
+  `guardrails.loopBreaker.maxPdcaIterations` is reached.
+- `/plan-plus` records its own `plan` phase.
+- Removed: four Stop handlers that returned before doing anything
+  (`pdca-skill-stop`, `plan-plus-stop`, `gap-detector-stop`, `iterator-stop`),
+  seven helpers only they called, and `lib/pdca/circuit-breaker.js`.
+
+Behaviour changes: plan, design and do no longer advance on Stop; act no longer
+moves to check without a re-measurement; report is no longer auto-archived on
+Stop (`/pdca archive` remains the step); Stop output and team cleanup now run
+while pdca or pm-lead is active.
+
+### Fixed — guard and hook issues (#161, #162, #163)
+
+- **#161** The destructive-command guard elided bare-tag heredoc bodies, so a
+  delete inside `$()` in such a body was allowed. Bodies holding a substitution
+  are now kept, and backslash continuations are joined by a scanner.
+- **#162** The SubagentStop handler returned the next-action hint as
+  `additionalContext`, waking every subagent up to eight times per stop. The
+  hint is no longer fed back into subagents.
+- The primary feature passes to the most recently updated one when the primary
+  leaves, instead of `activeFeatures[0]`.
+- Allowed pre-write detections are audited as observed, not blocked.
+- `verify-full-system` check K skips when the untracked sprint state is absent.
+- The `pdca` Template Loading steps point at the plugin root.
+
 ## [2.1.40] - 2026-09-25
 
 ### Added — plan, QA and security methods adapted from gstack
