@@ -15,6 +15,20 @@ reset();
 
 const BASE_DIR = path.resolve(__dirname, '../..');
 
+// HB-011~015 read the project's PDCA status. Run against a throwaway project so
+// the result does not depend on the checkout having one; CLAUDE_PROJECT_DIR is
+// read once by lib/core/platform, so set it before the first lib require.
+const os = require('os');
+const TMP_PROJECT = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-hook-behavior-'));
+fs.copyFileSync(path.join(BASE_DIR, 'bkit.config.json'), path.join(TMP_PROJECT, 'bkit.config.json'));
+const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+process.env.CLAUDE_PROJECT_DIR = TMP_PROJECT;
+process.on('exit', () => {
+  try { fs.rmSync(TMP_PROJECT, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+  if (origProjectDir !== undefined) process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+  else delete process.env.CLAUDE_PROJECT_DIR;
+});
+
 console.log('=== Hook I/O Behavioral Tests (20 TC) ===\n');
 
 // ============================================================
@@ -119,6 +133,8 @@ try {
 } catch (e) { status = null; }
 
 if (status) {
+  status.initPdcaStatusIfNotExists();
+  status.getPdcaStatusFull(true); // reload migrates the fresh v2.0 file to the current schema
   // HB-011: getPdcaStatusFull returns object
   assertNoThrow('HB-011', () => {
     const s = status.getPdcaStatusFull();

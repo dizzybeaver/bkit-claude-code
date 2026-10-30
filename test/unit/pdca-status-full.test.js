@@ -15,6 +15,28 @@ reset();
 
 console.log('\n=== pdca-status-full.test.js (25 TC) ===\n');
 
+// PS-020 counts features, so the project state must not depend on the checkout:
+// seed a throwaway project with one feature. CLAUDE_PROJECT_DIR is read once by
+// lib/core/platform, so set it before the first lib require.
+const TMP_PROJECT = fs.mkdtempSync(path.join(require('os').tmpdir(), 'bkit-status-full-'));
+fs.mkdirSync(path.join(TMP_PROJECT, '.bkit', 'state'), { recursive: true });
+fs.writeFileSync(path.join(TMP_PROJECT, '.bkit', 'state', 'pdca-status.json'), JSON.stringify({
+  version: '2.0',
+  activeFeatures: ['seeded-feature'],
+  primaryFeature: 'seeded-feature',
+  features: {
+    'seeded-feature': {
+      phase: 'plan', phaseNumber: 1,
+      timestamps: { started: new Date().toISOString(), lastUpdated: new Date().toISOString() },
+    },
+  },
+  pipeline: {}, session: {}, history: [],
+}, null, 2));
+process.env.CLAUDE_PROJECT_DIR = TMP_PROJECT;
+process.on('exit', () => {
+  try { fs.rmSync(TMP_PROJECT, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+});
+
 // Load module
 let status;
 try {

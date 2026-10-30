@@ -16,6 +16,20 @@ const path = require('path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
+// TC-HC-19 reads the project's PDCA status. Run against a throwaway project so
+// the result does not depend on the checkout having one; CLAUDE_PROJECT_DIR is
+// read once by lib/core/platform, so set it before the first lib require.
+const os = require('os');
+const TMP_PROJECT = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-hook-chain-'));
+fs.copyFileSync(path.join(PROJECT_ROOT, 'bkit.config.json'), path.join(TMP_PROJECT, 'bkit.config.json'));
+const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+process.env.CLAUDE_PROJECT_DIR = TMP_PROJECT;
+process.on('exit', () => {
+  try { fs.rmSync(TMP_PROJECT, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+  if (origProjectDir !== undefined) process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+  else delete process.env.CLAUDE_PROJECT_DIR;
+});
+
 let passed = 0;
 let failed = 0;
 const results = [];
@@ -37,6 +51,7 @@ const coreConfig = require(path.join(PROJECT_ROOT, 'lib/core/config'));
 const ambiguity = require(path.join(PROJECT_ROOT, 'lib/intent/ambiguity'));
 const trigger = require(path.join(PROJECT_ROOT, 'lib/intent/trigger'));
 const pdcaStatus = require(path.join(PROJECT_ROOT, 'lib/pdca/status'));
+pdcaStatus.initPdcaStatusIfNotExists();
 const pdcaLevel = require(path.join(PROJECT_ROOT, 'lib/pdca/level'));
 const pdcaAutomation = require(path.join(PROJECT_ROOT, 'lib/pdca/automation'));
 const templateValidator = require(path.join(PROJECT_ROOT, 'lib/pdca/template-validator'));

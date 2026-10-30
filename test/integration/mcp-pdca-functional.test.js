@@ -15,6 +15,23 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '../..');
 const SERVER_PATH = 'servers/bkit-pdca-server/index.js';
 
+// The server reads the project's PDCA status. Point it at a throwaway project
+// seeded by the library initializer so the result does not depend on the checkout.
+// The library resolves the project from CLAUDE_PROJECT_DIR; the server from BKIT_ROOT,
+// which the MCP client helper sets to the checkout unless options.env overrides it.
+const fs = require('fs');
+const os = require('os');
+const TMP_PROJECT = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-mcp-pdca-'));
+fs.copyFileSync(path.join(ROOT, 'bkit.config.json'), path.join(TMP_PROJECT, 'bkit.config.json'));
+const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+process.env.CLAUDE_PROJECT_DIR = TMP_PROJECT;
+require(path.join(ROOT, 'lib/pdca/status')).initPdcaStatusIfNotExists();
+process.on('exit', () => {
+  try { fs.rmSync(TMP_PROJECT, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+  if (origProjectDir !== undefined) process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+  else delete process.env.CLAUDE_PROJECT_DIR;
+});
+
 let createMcpClient;
 try {
   ({ createMcpClient } = require(path.join(ROOT, 'test/helpers/mcp-client.js')));
@@ -38,7 +55,7 @@ async function run() {
 
   let client;
   try {
-    client = await createMcpClient(SERVER_PATH, { timeout: 8000 });
+    client = await createMcpClient(SERVER_PATH, { timeout: 8000, env: { BKIT_ROOT: TMP_PROJECT } });
     await client.initialize();
   } catch (e) {
     console.log(`  SKIP ALL: Cannot start PDCA server (${e.message})`);
