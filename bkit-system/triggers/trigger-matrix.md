@@ -73,8 +73,7 @@ These hooks are defined in skill YAML frontmatter:
 | [[../../skills/phase-8-review/SKILL|phase-8-review]] | `phase8-review-stop.js` | Review summary + gap analysis |
 | [[../../skills/zero-script-qa/SKILL|zero-script-qa]] | `qa-stop.js` | QA session cleanup |
 | [[../../skills/development-pipeline/SKILL|development-pipeline]] | `echo` | Pipeline completion |
-| [[../agents/gap-detector|gap-detector]] | `gap-detector-stop.js` | Check-Act iteration: Match Rate based branching (v1.3.0) |
-| [[../agents/pdca-iterator|pdca-iterator]] | `iterator-stop.js` | Check-Act iteration: Complete/Continue guidance (v1.3.0) |
+| [[../agents/gap-detector|gap-detector]] | `subagent-stop-handler.js` (SubagentStop) | Records matchRate and metric M1 from the gap report |
 | [[../agents/code-analyzer|code-analyzer]] | `analysis-stop.js` | Issue summary and next action guidance on analysis completion |
 | [[../agents/qa-monitor|qa-monitor]] | `qa-stop.js` | Result summary and cleanup on QA session end |
 
@@ -130,16 +129,11 @@ Automatic iteration cycle for quality improvement:
 ```
 gap-detector Agent (Check)
     ↓ (Stop hook)
-gap-detector-stop.js
-    ├── >= 90% Match Rate → Suggest report-generator
-    ├── 70-89% Match Rate → Provide options (manual/auto)
-    └── < 70% Match Rate  → Strongly recommend pdca-iterator
+subagent-stop-handler.js (records matchRate + M1)
+    ├── >= 90% Match Rate → report-generator
+    └── < 90% Match Rate  → pdca-iterator Agent (Act)
                                ↓
-                          pdca-iterator Agent (Act)
-                               ↓ (Stop hook)
-                          iterator-stop.js
-                               ├── Completion detected → Suggest report-generator
-                               └── In progress → Guide to re-run gap-detector
+                          re-run gap-detector
 ```
 
 ### Stop Hook Flow

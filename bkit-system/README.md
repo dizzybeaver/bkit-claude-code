@@ -117,8 +117,7 @@ flowchart TB
     end
 
     subgraph StopHooks["Stop Hooks Layer"]
-        GDS["gap-detector-stop.js"]
-        ITS["iterator-stop.js"]
+        SSH["subagent-stop-handler.js<br/>(records gap-detector matchRate + M1)"]
     end
 
     subgraph StateLayer["State Management"]
@@ -141,7 +140,7 @@ flowchart LR
     T --> B["/pdca analyze"]
     B --> C["gap-detector"]
     C --> D{"matchRate?"}
-    D -->|"< 90%"| E["[Act] Task + triggerNextPdcaAction"]
+    D -->|"< 90%"| E["[Act] Task"]
     D -->|">= 90%"| F["[Report] Task"]
     E --> G["/pdca iterate"]
     G --> H["pdca-iterator"]
@@ -160,9 +159,7 @@ flowchart LR
 | Component | Depends On | Purpose |
 |-----------|-----------|---------|
 | `skill-orchestrator.js` | `lib/pdca/`, `lib/task/` | PDCA state + Task management |
-| `gap-detector-stop.js` | `lib/common.js` → `lib/task/` | Task creation, triggerNextPdcaAction |
-| `iterator-stop.js` | `lib/common.js` → `lib/task/` | Task update, phase transition |
-| `pdca-skill-stop.js` | `lib/task/` | Task chain creation (v1.4.7) |
+| `subagent-stop-handler.js` | `lib/quality/match-rate.js`, `lib/pdca/status` | Records gap-detector matchRate and metric M1 |
 | `pdca` skill | `templates/*.md` | Template imports |
 | `agents/*.md` | `skills` | `skills` frontmatter field (preloads the full skill content at subagent startup) |
 

@@ -262,7 +262,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
     - "그대로 진행" — accept current state
     Wait for user decision before proceeding.
 12. **Complete predecessor Task first**: Use TaskList to find the `[Do] {feature}` Task (and any earlier phase Task for this feature still `in_progress`) and TaskUpdate each to `status: "completed"` — this resolves the `blockedBy` chain and prevents stale phase status from leaking into prompt context (see [Phase Transition Rule](#task-integration)). Then Create Task: `[Check] {feature}` (blockedBy: Do task)
-13. Update `.bkit/state/pdca-status.json`: phase = "check", matchRate
+13. Do not copy the match rate by hand. When gap-detector finishes, bkit records its `Overall Match Rate` as `matchRate` (and metric M1) and moves the phase to "check". Confirm with `/pdca status`. Write `matchRate` to `.bkit/state/pdca-status.json` yourself only when status shows it as not measured, or when the L1–L3 runtime results changed the Overall from gap-detector's value.
 
 **Output Path**: `docs/03-analysis/{feature}.analysis.md`
 
@@ -293,7 +293,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 1. Check results (when matchRate < 90%)
 2. **Call pdca-iterator Agent**
 3. Auto-fix code based on Gap list
-4. Auto re-run Check after fixes
+4. After pdca-iterator returns, re-run Check by calling the gap-detector Agent yourself (a subagent cannot start another subagent). Its new `Overall Match Rate` moves the phase from "act" back to "check".
 5. **Complete predecessor Task first**: Use TaskList to find the `[Check] {feature}` Task and any prior `[Act-*] {feature}` Task for this feature still `in_progress` and TaskUpdate each to `status: "completed"` (see [Phase Transition Rule](#task-integration)). Then Create Task: `[Act-N] {feature}` (N = iteration count)
 6. Stop when >= 90% reached or max iterations (5) hit
 

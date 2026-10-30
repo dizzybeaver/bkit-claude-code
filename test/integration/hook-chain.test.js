@@ -8,7 +8,7 @@
  * - user-prompt-handler.js 7-stage processing (each stage try-catch)
  * - SessionStart → config load → level detect → memory read
  * - PostToolUse → template validation
- * 30 TC
+ * 29 TC
  */
 
 const fs = require('fs');
@@ -53,7 +53,6 @@ const trigger = require(path.join(PROJECT_ROOT, 'lib/intent/trigger'));
 const pdcaStatus = require(path.join(PROJECT_ROOT, 'lib/pdca/status'));
 pdcaStatus.initPdcaStatusIfNotExists();
 const pdcaLevel = require(path.join(PROJECT_ROOT, 'lib/pdca/level'));
-const pdcaAutomation = require(path.join(PROJECT_ROOT, 'lib/pdca/automation'));
 const templateValidator = require(path.join(PROJECT_ROOT, 'lib/pdca/template-validator'));
 const team = require(path.join(PROJECT_ROOT, 'lib/team'));
 
@@ -215,18 +214,6 @@ assert('TC-HC-19',
 assert('TC-HC-20',
   typeof pdcaStatus.readBkitMemory === 'function',
   'readBkitMemory is exported from lib/pdca/status'
-);
-
-// TC-HC-21: emitUserPrompt generates status prompt (v2.1.0: via lib/pdca/automation)
-const prompt2 = pdcaAutomation.emitUserPrompt({
-  message: 'Test question',
-  feature: 'test-feature',
-  phase: 'plan',
-  suggestions: ['Option 1']
-});
-assert('TC-HC-21',
-  typeof prompt2 === 'string' && prompt2.length > 0,
-  'emitUserPrompt generates non-empty string'
 );
 
 // TC-HC-22: SessionStart hook file exists and is valid

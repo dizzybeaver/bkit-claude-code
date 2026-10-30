@@ -122,7 +122,7 @@ const ALL_NEW_MODULES = [
   // PDCA (14) — v2.1.0: commit-context, decision-record, deploy-gate, do-detector removed
   'lib/pdca/automation.js', 'lib/pdca/executive-summary.js', 'lib/pdca/level.js',
   'lib/pdca/phase.js', 'lib/pdca/template-validator.js', 'lib/pdca/tier.js',
-  'lib/pdca/circuit-breaker.js', 'lib/pdca/state-machine.js',
+  'lib/pdca/state-machine.js',
   'lib/pdca/resume.js', 'lib/pdca/lifecycle.js', 'lib/pdca/status.js',
   'lib/pdca/workflow-parser.js', 'lib/pdca/workflow-engine.js', 'lib/pdca/full-auto-do.js',
   'lib/pdca/feature-manager.js', 'lib/pdca/batch-orchestrator.js', 'lib/pdca/index.js',

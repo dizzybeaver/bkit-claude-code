@@ -3,7 +3,7 @@
  * Unit Tests for scripts/sprint-skill-stop.js (Issue #113 — v2.1.21)
  *
  * Verifies the Sprint Stop hook surfaces Executive Summary + AskUserQuestion +
- * sessionTitle for success/intermediate paths, mirroring pdca-skill-stop.js.
+ * sessionTitle for success/intermediate paths.
  *
  * Runs the script as a real subprocess (stdin payload → stdout JSON) — static
  * inspection is insufficient for hook behavior ([[feedback_thorough_qa]]).

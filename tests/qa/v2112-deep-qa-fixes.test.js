@@ -144,9 +144,8 @@ tc('L1-016', '@version JSDoc present on all 142 lib modules (#6)', () => {
   assertEq(missing.length, 0, `#6 fix: ${missing.length} files missing @version: ${missing.slice(0, 3).join(',')}`);
 });
 
-tc('L1-017', '9 critical scripts have require.main guard (#9/#10/#8)', () => {
-  const guarded = ['gap-detector-stop', 'pdca-skill-stop', 'iterator-stop', 'plan-plus-stop',
-    'subagent-start-handler', 'subagent-stop-handler', 'team-idle-handler',
+tc('L1-017', '5 critical scripts have require.main guard (#8)', () => {
+  const guarded = ['subagent-start-handler', 'subagent-stop-handler', 'team-idle-handler',
     'pdca-task-completed', 'sync-folders'];
   for (const s of guarded) {
     const text = fs.readFileSync(path.join(ROOT, 'scripts', s + '.js'), 'utf8');
@@ -191,19 +190,6 @@ tc('L2-001', 'control-state.json field consistency invariant (#1+#11)', () => {
     assertEq(j.level, ctrl.getLevelName(target));
   }
   ctrl.setLevel(before.currentLevel, { reason: 'L2-001 restore', setBy: before.setBy || 'runtime' });
-});
-
-tc('L2-004', 'gap-detector-stop bare-require emits no stdout (#9)', () => {
-  const r = cp.spawnSync('node', ['-e', "const m = require('./scripts/gap-detector-stop'); console.log(JSON.stringify(m));"], {
-    cwd: ROOT, encoding: 'utf8', timeout: 5000,
-  });
-  assertEq(r.stdout.trim(), '{}', `expected {} bare-require output, got: ${r.stdout.slice(0, 80)}`);
-});
-tc('L2-006', 'pdca-skill-stop bare-require emits no stdout (#10)', () => {
-  const r = cp.spawnSync('node', ['-e', "const m = require('./scripts/pdca-skill-stop'); console.log(JSON.stringify(m));"], {
-    cwd: ROOT, encoding: 'utf8', timeout: 5000,
-  });
-  assertEq(r.stdout.trim(), '{}');
 });
 
 tc('L2-008', 'createCheckpoint → verifyCheckpoint roundtrip (#12)', () => {

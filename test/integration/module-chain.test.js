@@ -12,7 +12,7 @@
  * - core/ → pdca/ dependency chain (v2.0.0)
  * - control/ → audit/ chain (v2.0.0)
  * - quality/ → gate-manager chain (v2.0.0)
- * 30 TC (v1.6.1) + 15 TC (v2.0.0)
+ * 26 TC (v1.6.1) + 15 TC (v2.0.0)
  */
 
 const path = require('path');
@@ -23,7 +23,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 // ============================================================
 // v2.1.26 (I-13, test isolation): all PROJECT_DIR-anchored writes
-// (pdca-status.json via createPdcaTaskChain/autoCreatePdcaTask,
+// (pdca-status.json,
 // regression-rules.json via regressionGuard.addRule, audit) must land in a
 // throwaway tmp root — never in the repo's real .bkit. CLAUDE_PROJECT_DIR
 // is captured by lib/core/platform at FIRST import, so this block must run
@@ -66,38 +66,14 @@ const trigger = require(path.join(PROJECT_ROOT, 'lib/intent/trigger'));
 const language = require(path.join(PROJECT_ROOT, 'lib/intent/language'));
 
 // ============================================================
-// Section 1: pdca/phase → task/creator (TC 01-08)
+// Section 1: pdca/phase → task/creator (TC 03, 05-07)
 // ============================================================
-
-// TC-MC-01: PDCA_PHASES is consumed by createPdcaTaskChain
-const chain = creator.createPdcaTaskChain('test-module-chain');
-assert('TC-MC-01',
-  chain.phases.length > 0 && chain.phases.includes('plan'),
-  'createPdcaTaskChain produces phases including "plan"'
-);
-
-// TC-MC-02: Phase order in chain matches PDCA_PHASES order
-const phaseOrder = Object.entries(phase.PDCA_PHASES)
-  .filter(([k]) => !['pm', 'archived'].includes(k))
-  .sort((a, b) => a[1].order - b[1].order)
-  .map(([k]) => k);
-assert('TC-MC-02',
-  JSON.stringify(chain.phases) === JSON.stringify(phaseOrder),
-  'Chain phase order matches PDCA_PHASES sort order'
-);
 
 // TC-MC-03: getPhaseNumber is used by getPdcaTaskMetadata
 const metadata = creator.getPdcaTaskMetadata('plan', 'test-feature');
 assert('TC-MC-03',
   metadata.pdcaOrder === phase.getPhaseNumber('plan'),
   'getPdcaTaskMetadata.pdcaOrder equals getPhaseNumber("plan")'
-);
-
-// TC-MC-04: Each chain task has correct phase metadata
-assert('TC-MC-04',
-  chain.tasks.design.metadata.pdcaPhase === 'design' &&
-  chain.tasks.design.metadata.pdcaOrder === phase.getPhaseNumber('design'),
-  'Chain task design has correct pdcaPhase and pdcaOrder'
 );
 
 // TC-MC-05: generatePdcaTaskSubject uses phase name
@@ -120,14 +96,6 @@ assert('TC-MC-07',
   phase.getPreviousPdcaPhase('design') === 'plan' &&
   phase.getPreviousPdcaPhase('do') === 'design',
   'getPreviousPdcaPhase: design→plan, do→design'
-);
-
-// TC-MC-08: autoCreatePdcaTask uses PDCA_PHASES-based metadata
-const autoTask = creator.autoCreatePdcaTask('feat-x', 'check');
-assert('TC-MC-08',
-  autoTask.metadata.pdcaPhase === 'check' &&
-  autoTask.metadata.pdcaOrder === phase.getPhaseNumber('check'),
-  'autoCreatePdcaTask check task has correct phase metadata'
 );
 
 // ============================================================

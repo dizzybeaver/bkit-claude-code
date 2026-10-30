@@ -168,22 +168,15 @@ assert('VW-018',
 // Section 4: Agent stop scripts reference state-machine (VW-019~024)
 // ============================================================
 
-const gapDetectorStop = readScript('scripts/gap-detector-stop.js');
-const iteratorStop = readScript('scripts/iterator-stop.js');
+const subagentStop = readScript('scripts/subagent-stop-handler.js');
 const ctoStop = readScript('scripts/cto-stop.js');
 const analysisStop = readScript('scripts/analysis-stop.js');
 const qaStop = readScript('scripts/qa-stop.js');
 
-// VW-019: gap-detector-stop.js references PDCA status
+// VW-019: subagent-stop-handler.js records the gap-detector matchRate in PDCA status
 assert('VW-019',
-  gapDetectorStop !== null && /(?:getPdcaStatusFull|updatePdcaStatus|pdca\/status)/.test(gapDetectorStop),
-  'gap-detector-stop.js references PDCA status module'
-);
-
-// VW-020: iterator-stop.js references PDCA status
-assert('VW-020',
-  iteratorStop !== null && /(?:getPdcaStatusFull|updatePdcaStatus|pdca\/status)/.test(iteratorStop),
-  'iterator-stop.js references PDCA status module'
+  subagentStop !== null && /(?:getPdcaStatusFull|updatePdcaStatus|pdca\/status)/.test(subagentStop),
+  'subagent-stop-handler.js references PDCA status module'
 );
 
 // VW-021: cto-stop.js references PDCA status
@@ -204,11 +197,11 @@ assert('VW-023',
   'qa-stop.js references v2.0.0 metrics collection'
 );
 
-// VW-024: All 5 agent stop scripts exist
+// VW-024: All 4 agent stop scripts exist
 assert('VW-024',
-  gapDetectorStop !== null && iteratorStop !== null && ctoStop !== null &&
+  subagentStop !== null && ctoStop !== null &&
   analysisStop !== null && qaStop !== null,
-  'All 5 agent stop scripts exist and are readable'
+  'All 4 agent stop scripts exist and are readable'
 );
 
 // ============================================================
