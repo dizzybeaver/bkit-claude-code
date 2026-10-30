@@ -334,6 +334,8 @@ const CATEGORIES = {
       'regression/stop-handler-extraction.test.js',
       // SubagentStop has no additionalContext channel (issue #162).
       'regression/subagent-stop-handler.test.js',
+      // Release verifier check K skips on a clone without untracked .bkit state.
+      'regression/verify-full-system-skip.test.js',
     ],
     expected: 688,
   },
