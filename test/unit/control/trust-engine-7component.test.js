@@ -100,7 +100,8 @@ test('TC-F4-1-U4: externalDogfoodFeedbackResponseRate weight = 0.05', () => {
 test('TC-F4-1-U5: legacy 6-component profile loads with normalized weights', () => {
   const profilePath = path.join(PROJECT_ROOT, '.bkit/state/trust-profile.json');
   const backup = fs.existsSync(profilePath) ? fs.readFileSync(profilePath, 'utf8') : null;
-  // Write legacy 6-component profile
+  // Write legacy 6-component profile (a fresh checkout has no .bkit/state yet)
+  fs.mkdirSync(path.dirname(profilePath), { recursive: true });
   fs.writeFileSync(profilePath, JSON.stringify({
     trustScore: 50,
     currentLevel: 2,
