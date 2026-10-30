@@ -132,7 +132,6 @@ function main() {
       agentName,
       agentType,
       status,
-      ...(nextActionHint ? { additionalContext: nextActionHint } : {}),
     }
   };
 

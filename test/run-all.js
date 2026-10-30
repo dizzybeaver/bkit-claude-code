@@ -332,6 +332,8 @@ const CATEGORIES = {
       'regression/qa-followups.test.js',
       // The last three Stop handlers that regexed the payload envelope.
       'regression/stop-handler-extraction.test.js',
+      // SubagentStop has no additionalContext channel (issue #162).
+      'regression/subagent-stop-handler.test.js',
     ],
     expected: 688,
   },
