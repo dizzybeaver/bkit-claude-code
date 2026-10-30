@@ -1,8 +1,8 @@
 {
   "_comment": "Evidence from a real `claude -p --plugin-dir` run. Regenerate with `node test/qa-harness-full-live.js --layer hooks --record` whenever hooks.json changes. This is verified evidence re-verified on change, NOT a live session run by CI.",
-  "recordedAt": "2026-09-25T11:59:11.994Z",
-  "claudeVersion": "2.1.282 (Claude Code)",
-  "hooksJsonSha256": "4be08f01c25bc173956c4d08cbaf5b17a994ba61f7d7cce52dfad3a929ce4706",
+  "recordedAt": "2026-10-30T15:51:45.212Z",
+  "claudeVersion": "2.1.314 (Claude Code)",
+  "hooksJsonSha256": "7d1a0a4bd0a0c9744e1d6a4b9c4d2c48d4421f0370ea437502aab25b06e58c18",
   "observedEvents": [
     "ConfigChange",
     "InstructionsLoaded",
@@ -22,14 +22,14 @@
   ],
   "postToolUseTools": [
     "Bash",
-    "Edit",
     "Write",
+    "Edit",
     "Skill"
   ],
   "preToolUseTools": [
     "Bash",
-    "Edit",
-    "Write"
+    "Write",
+    "Edit"
   ],
   "unverifiedEvents": {
     "CwdChanged": "measured: cd inside a Bash tool call changes that command chain only, not the SESSION working directory. The model confirmed the same in its own reply",
