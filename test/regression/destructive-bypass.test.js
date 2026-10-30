@@ -329,6 +329,16 @@ test('ISSUE-161 bare-tag heredoc body with backticks is detected as critical', (
   assert.ok(hasCritical(['cat > /tmp/x <<EOF', `\`${DEL_HOME}\``, 'EOF'].join('\n')));
 });
 
+test('ISSUE-161 substitution spanning body lines is detected as critical', () => {
+  assert.ok(hasCritical(['cat > /tmp/x <<EOF', '$(', DEL_HOME, ')', 'EOF'].join('\n')));
+  assert.ok(hasCritical(['cat > /tmp/x <<EOF', '`', DEL_HOME, '`', 'EOF'].join('\n')));
+});
+
+test('ISSUE-161 backslash-newline continuation inside a body is joined before grading', () => {
+  const [verb, target] = [DEL_HOME.slice(0, DEL_HOME.lastIndexOf(' ')), DEL_HOME.slice(DEL_HOME.lastIndexOf(' ') + 1)];
+  assert.ok(hasCritical(['cat > /tmp/x <<EOF', `$(${verb} \\`, `${target})`, 'EOF'].join('\n')));
+});
+
 test('ISSUE-161 quoted-tag heredoc body stays inert (issue #145)', () => {
   assert.strictEqual(verdict(["cat > /tmp/x <<'EOF'", `$(${DEL_HOME})`, 'EOF'].join('\n')).detected, false);
   assert.strictEqual(verdict(['cat > /tmp/x <<"EOF"', `$(${DEL_HOME})`, 'EOF'].join('\n')).detected, false);
