@@ -314,6 +314,40 @@ test('ISSUE-145 the real heredoc-to-shell bypass still blocks', () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// Issue #161 — bare-tag heredoc bodies are expanded by bash
+// ---------------------------------------------------------------------------
+
+const DEL_HOME = `${RM} -rf ~`;
+const hasCritical = (cmd) => verdict(cmd).severities.includes('critical');
+
+test('ISSUE-161 bare-tag heredoc body with $(...) is detected as critical', () => {
+  assert.ok(hasCritical(['cat > /tmp/x <<EOF', `$(${DEL_HOME})`, 'EOF'].join('\n')));
+});
+
+test('ISSUE-161 bare-tag heredoc body with backticks is detected as critical', () => {
+  assert.ok(hasCritical(['cat > /tmp/x <<EOF', `\`${DEL_HOME}\``, 'EOF'].join('\n')));
+});
+
+test('ISSUE-161 quoted-tag heredoc body stays inert (issue #145)', () => {
+  assert.strictEqual(verdict(["cat > /tmp/x <<'EOF'", `$(${DEL_HOME})`, 'EOF'].join('\n')).detected, false);
+  assert.strictEqual(verdict(['cat > /tmp/x <<"EOF"', `$(${DEL_HOME})`, 'EOF'].join('\n')).detected, false);
+});
+
+test('ISSUE-161 bare-tag body of prose or a harmless $(date) is unchanged', () => {
+  assert.strictEqual(verdict(['cat > /tmp/x <<EOF', 'notes', 'EOF'].join('\n')).detected, false);
+  assert.strictEqual(verdict(['cat > /tmp/x <<EOF', 'now: $(date)', 'EOF'].join('\n')).detected, false);
+});
+
+test('ISSUE-161 escaped \\$( in a bare-tag body is literal text, not critical', () => {
+  assert.ok(!hasCritical(['cat > /tmp/x <<EOF', `\\$(${DEL_HOME})`, 'EOF'].join('\n')));
+});
+
+test('ISSUE-161 command substitution closer is not part of the delete target', () => {
+  assert.ok(hasCritical(`echo $(${DEL_HOME})`), 'echo $(rm -rf ~) must grade critical');
+  assert.ok(hasCritical(`x=$(${RM} -rf /)`), 'x=$(rm -rf /) must grade critical');
+});
+
 if (failures.length > 0) {
   console.error(`\n✗ destructive-bypass: ${failures.length} failing assertion(s)`);
   for (const f of failures) console.error(`    ✗ ${f}`);
