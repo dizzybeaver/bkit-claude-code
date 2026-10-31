@@ -10,8 +10,16 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { assert, summary, reset } = require('../helpers/assert');
 reset();
+
+// Section 3 restores a dummy backup into PROJECT_DIR when no status file
+// exists there (fresh clone, CI). CLAUDE_PROJECT_DIR is read once by
+// lib/core/platform, so point it at a throwaway dir before any lib require.
+const TMP_PROJECT = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-iso-project-'));
+const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+process.env.CLAUDE_PROJECT_DIR = TMP_PROJECT;
 
 console.log('\n=== project-isolation.test.js (10 TC) ===\n');
 
@@ -170,6 +178,16 @@ try {
     fs.rmSync(TMP_BASE, { recursive: true, force: true });
   }
 } catch (_) { /* cleanup non-critical */ }
+
+try {
+  fs.rmSync(TMP_PROJECT, { recursive: true, force: true });
+} catch (_) { /* cleanup non-critical */ }
+
+if (origProjectDir !== undefined) {
+  process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+} else {
+  delete process.env.CLAUDE_PROJECT_DIR;
+}
 
 if (origPluginData !== undefined) {
   process.env.CLAUDE_PLUGIN_DATA = origPluginData;

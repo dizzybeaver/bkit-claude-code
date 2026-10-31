@@ -8,13 +8,27 @@
  * - user-prompt-handler.js 7-stage processing (each stage try-catch)
  * - SessionStart → config load → level detect → memory read
  * - PostToolUse → template validation
- * 30 TC
+ * 29 TC
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+
+// TC-HC-19 reads the project's PDCA status. Run against a throwaway project so
+// the result does not depend on the checkout having one; CLAUDE_PROJECT_DIR is
+// read once by lib/core/platform, so set it before the first lib require.
+const os = require('os');
+const TMP_PROJECT = fs.mkdtempSync(path.join(os.tmpdir(), 'bkit-hook-chain-'));
+fs.copyFileSync(path.join(PROJECT_ROOT, 'bkit.config.json'), path.join(TMP_PROJECT, 'bkit.config.json'));
+const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+process.env.CLAUDE_PROJECT_DIR = TMP_PROJECT;
+process.on('exit', () => {
+  try { fs.rmSync(TMP_PROJECT, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+  if (origProjectDir !== undefined) process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+  else delete process.env.CLAUDE_PROJECT_DIR;
+});
 
 let passed = 0;
 let failed = 0;
@@ -37,8 +51,8 @@ const coreConfig = require(path.join(PROJECT_ROOT, 'lib/core/config'));
 const ambiguity = require(path.join(PROJECT_ROOT, 'lib/intent/ambiguity'));
 const trigger = require(path.join(PROJECT_ROOT, 'lib/intent/trigger'));
 const pdcaStatus = require(path.join(PROJECT_ROOT, 'lib/pdca/status'));
+pdcaStatus.initPdcaStatusIfNotExists();
 const pdcaLevel = require(path.join(PROJECT_ROOT, 'lib/pdca/level'));
-const pdcaAutomation = require(path.join(PROJECT_ROOT, 'lib/pdca/automation'));
 const templateValidator = require(path.join(PROJECT_ROOT, 'lib/pdca/template-validator'));
 const team = require(path.join(PROJECT_ROOT, 'lib/team'));
 
@@ -200,18 +214,6 @@ assert('TC-HC-19',
 assert('TC-HC-20',
   typeof pdcaStatus.readBkitMemory === 'function',
   'readBkitMemory is exported from lib/pdca/status'
-);
-
-// TC-HC-21: emitUserPrompt generates status prompt (v2.1.0: via lib/pdca/automation)
-const prompt2 = pdcaAutomation.emitUserPrompt({
-  message: 'Test question',
-  feature: 'test-feature',
-  phase: 'plan',
-  suggestions: ['Option 1']
-});
-assert('TC-HC-21',
-  typeof prompt2 === 'string' && prompt2.length > 0,
-  'emitUserPrompt generates non-empty string'
 );
 
 // TC-HC-22: SessionStart hook file exists and is valid

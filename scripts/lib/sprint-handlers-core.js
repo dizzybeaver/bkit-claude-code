@@ -276,9 +276,9 @@ async function handlePhase(args, infra, deps) {
     try { await infra.stateStore.save(result.sprint); } catch (_e) { /* save best-effort on gate_fail */ }
   }
   // v2.1.16 (Issue #93, F4): emit gate_failed audit entry with expanded details
-  // schema (reportPath + failedGates summary). Pre-v2.1.16 details shapes from
-  // tool-failure-handler / gap-detector-stop remain unchanged — audit details
-  // is pass-through sanitized.
+  // schema (reportPath + failedGates summary). The details shape from
+  // tool-failure-handler is narrower and unchanged — audit details is
+  // pass-through sanitized.
   if (audit && !result.ok && result.reason === 'gate_fail') {
     try {
       const failedGates = [];

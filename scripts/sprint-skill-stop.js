@@ -3,8 +3,7 @@
  * sprint-skill-stop.js — Sprint Skill Stop Hook (Issue #113 — v2.1.21)
  *
  * Purpose: Surface a human-readable Sprint Executive Summary + AskUserQuestion
- * + sessionTitle when a `/sprint` skill operation completes — mirroring the
- * PDCA enforcement intent of scripts/pdca-skill-stop.js. Closes the "raw JSON
+ * + sessionTitle when a `/sprint` skill operation completes. Closes the "raw JSON
  * only, 100% dependent on LLM narration" gap for Sprint success/intermediate
  * paths (#113 §A).
  *
@@ -14,10 +13,9 @@
  * the working stop handlers (cto-stop.js / team-stop.js).
  *
  * NOTE (why run-export, not bare-require self-exec): the bare-require-guard
- * pattern (`if (require.main !== module) { module.exports = {}; return; }`,
- * pdca-skill-stop.js line 19, added v2.1.12 #10) makes the module a NO-OP when
- * require()-d by unified-stop — `executeHandler` gets `{}`, finds no `.run`,
- * and nothing executes. To guarantee the Sprint summary actually fires through
+ * pattern (`if (require.main !== module) { module.exports = {}; return; }`)
+ * makes a module a NO-OP when require()-d by unified-stop — `executeHandler`
+ * gets `{}`, finds no `.run`, and nothing executes. To guarantee the Sprint summary actually fires through
  * the documented SKILL_HANDLERS path, this handler exports `run(hookContext)`.
  * Direct `node sprint-skill-stop.js` invocation (tests / manual) is also kept.
  *

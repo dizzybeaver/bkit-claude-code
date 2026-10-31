@@ -95,7 +95,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 
 ### plan (Plan Phase)
 
-0. **Template Loading**: Read `templates/plan.template.md` to understand the required Plan document structure and sections. Use this template's sections as your document outline. This is MANDATORY — do not generate Plan documents from memory or assumptions.
+0. **Template Loading**: Read `${CLAUDE_PLUGIN_ROOT}/templates/plan.template.md` to understand the required Plan document structure and sections. Use this template's sections as your document outline. This is MANDATORY — do not generate Plan documents from memory or assumptions.
 1. **PRD Auto-Reference**: Check if `docs/00-pm/{feature}.prd.md` exists
    - If found: Read PRD and use as context for Plan document (improves quality significantly)
    - If not found: Proceed normally (tip: run `/pdca pm {feature}` first for better results)
@@ -119,7 +119,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 
 ### design (Design Phase)
 
-0. **Template Loading**: Read `templates/design.template.md` to understand the required Design document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Design documents from memory or assumptions.
+0. **Template Loading**: Read `${CLAUDE_PLUGIN_ROOT}/templates/design.template.md` to understand the required Design document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Design documents from memory or assumptions.
 1. Verify Plan document exists (required - suggest running plan first if missing)
 2. Read Plan document to understand requirements and scope
 3. **PRD Context Loading**: Check if `docs/00-pm/{feature}.prd.md` exists. If found, read the Executive Summary and Beachhead/GTM sections to inform architecture decisions with market context. This prevents strategic context loss at the Plan→Design handoff.
@@ -262,7 +262,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
     - "그대로 진행" — accept current state
     Wait for user decision before proceeding.
 12. **Complete predecessor Task first**: Use TaskList to find the `[Do] {feature}` Task (and any earlier phase Task for this feature still `in_progress`) and TaskUpdate each to `status: "completed"` — this resolves the `blockedBy` chain and prevents stale phase status from leaking into prompt context (see [Phase Transition Rule](#task-integration)). Then Create Task: `[Check] {feature}` (blockedBy: Do task)
-13. Update `.bkit/state/pdca-status.json`: phase = "check", matchRate
+13. Do not copy the match rate by hand. When gap-detector finishes, bkit records its `Overall Match Rate` as `matchRate` (and metric M1) and moves the phase to "check". Confirm with `/pdca status`. Write `matchRate` to `.bkit/state/pdca-status.json` yourself only when status shows it as not measured, or when the L1–L3 runtime results changed the Overall from gap-detector's value.
 
 **Output Path**: `docs/03-analysis/{feature}.analysis.md`
 
@@ -293,7 +293,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 1. Check results (when matchRate < 90%)
 2. **Call pdca-iterator Agent**
 3. Auto-fix code based on Gap list
-4. Auto re-run Check after fixes
+4. After pdca-iterator returns, re-run Check by calling the gap-detector Agent yourself (a subagent cannot start another subagent). Its new `Overall Match Rate` moves the phase from "act" back to "check".
 5. **Complete predecessor Task first**: Use TaskList to find the `[Check] {feature}` Task and any prior `[Act-*] {feature}` Task for this feature still `in_progress` and TaskUpdate each to `status: "completed"` (see [Phase Transition Rule](#task-integration)). Then Create Task: `[Act-N] {feature}` (N = iteration count)
 6. Stop when >= 90% reached or max iterations (5) hit
 
@@ -303,7 +303,7 @@ Run PM Agent Team for product discovery and strategy analysis before Plan phase.
 
 ### report (Completion Report)
 
-0. **Template Loading**: Read `templates/report.template.md` to understand the required Report document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Report documents from memory or assumptions.
+0. **Template Loading**: Read `${CLAUDE_PLUGIN_ROOT}/templates/report.template.md` to understand the required Report document structure. Use this template's sections as your document outline. This is MANDATORY — do not generate Report documents from memory or assumptions.
 1. Verify Check >= 90% (warn if below)
 2. **Full Upstream Context Loading (Phase 2+3)**: Load ALL upstream documents for comprehensive reporting:
    - Read PRD — compare original value proposition vs delivered value

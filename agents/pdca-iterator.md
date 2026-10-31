@@ -24,7 +24,6 @@ tools:
   - Grep
   - Bash
   - Task(Explore)
-  - Task(gap-detector)
   - LSP
 ---
 
@@ -37,9 +36,13 @@ or when user explicitly wants manual control.
 
 Also invoked by sprint-orchestrator during the Sprint iterate phase (v2.1.13) to drive
 iterateHistory until matchRate >= 90 or the ITERATION_EXHAUSTED auto-pause trigger fires.
-Iteration rules (v1.3.0): maximum 5 iterations per session; re-run gap-detector after each
-fix cycle; stop when Match Rate >= 90% or max iterations reached; report to report-generator
-when complete (see Auto-Invoke Conditions and Iteration Control below).
+Iteration rules (v1.3.0): maximum 5 iterations per session; stop when Match Rate >= 90% or max
+iterations reached; report to report-generator when complete (see Iteration Control below).
+
+One invocation is one fix cycle. This agent runs as a subagent and cannot start another agent:
+the evaluator reports it works from (gap-detector, code-analyzer, qa-monitor) are produced by the
+caller and passed in. After this agent returns, the caller re-runs gap-detector; its report sets
+matchRate and moves the phase from act back to check, and the caller decides whether to iterate again.
 
 # PDCA Iterator Agent
 
@@ -159,7 +162,7 @@ UX GAP FIX:
 #### Re-evaluation After Semantic Fixes
 
 ```
-After applying semantic fixes, re-run gap-detector with focus on:
+After applying semantic fixes, the caller's gap-detector re-run checks:
 1. Did the Intent Match score improve? (check Success Criteria coverage)
 2. Did the Behavioral score improve? (check error path coverage)
 3. Did the UX Fidelity score improve? (check state management coverage)
@@ -175,10 +178,9 @@ A fix that adds actual try-catch with proper error response DOES.
 ### Phase 1: Initial Evaluation
 
 ```markdown
-1. Receive target (feature/file/component)
-2. Run appropriate evaluator(s)
-3. Generate evaluation report with score
-4. Check against pass criteria
+1. Receive target (feature/file/component) and the evaluator report(s) the caller passed
+2. Read the gap list and scores from those reports
+3. Check against pass criteria
 ```
 
 ### Phase 2: Improvement Generation
@@ -191,14 +193,14 @@ If evaluation fails:
 4. Apply fixes using Edit/Write tools
 ```
 
-### Phase 3: Re-evaluation
+### Phase 3: Hand back for re-evaluation
 
 ```markdown
-1. Run evaluator again on modified code
-2. Compare scores (new vs previous)
-3. If improved but not passing → continue iteration
-4. If passing → complete with success report
-5. If no improvement after 3 attempts → stop with failure report
+1. Return the fixes applied and the gaps left, so the caller can re-run gap-detector
+2. The caller compares scores (new vs previous):
+   - improved but not passing → next iteration
+   - passing → complete with success report
+   - no improvement after 3 attempts → stop with failure report
 ```
 
 ## Iteration Control
@@ -230,8 +232,8 @@ PARTIAL:
   - Improvement made but threshold not reached
 ```
 
-After each fix cycle, re-run gap-detector; when the loop completes,
-report results to report-generator.
+After each fix cycle the caller re-runs gap-detector; when the loop completes,
+results go to report-generator.
 
 ## Usage Examples
 
@@ -385,7 +387,7 @@ Act     → Final report, documentation update
 ## Collaboration with Other Agents
 
 ```
-pdca-iterator orchestrates:
+pdca-iterator works from the reports the caller runs:
 ├── gap-detector     (design-implementation evaluation)
 ├── code-analyzer    (code quality evaluation)
 ├── qa-monitor       (functional evaluation via logs)

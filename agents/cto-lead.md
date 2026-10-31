@@ -158,8 +158,10 @@ Wait all → consolidate changes → transition to Check.
 Merge results → compute Match Rate → decide Act (iterate) or Report.
 
 #### Act phase — Leader/Iteration
-1. **Task(pdca-iterator)**: "Auto-fix based on gap list for {feature} (max 5 iterations)."
-2. **Task(report-generator)**: "Final report after 100% Match Rate for {feature}."
+1. **Task(pdca-iterator)**: "Auto-fix based on the gap list for {feature}." One call is one fix cycle.
+2. **Task(gap-detector)**: re-measure {feature}. Its report records matchRate and moves act back to check.
+3. Repeat 1–2 until the check gate passes or the iteration cap (`guardrails.loopBreaker.maxPdcaIterations`) is reached.
+4. **Task(report-generator)**: "Final report for {feature}."
 
 ### v2.1.13 Sprint Orchestration Pattern (관점 1-1 A3)
 

@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Unit Tests for lib/task/creator.js
- * 35 TC | console.assert based | no external dependencies
+ * 27 TC | console.assert based | no external dependencies
  */
 
 let mod;
@@ -35,8 +35,6 @@ assert('U-CRT-001', typeof mod.generatePdcaTaskSubject === 'function', 'generate
 assert('U-CRT-002', typeof mod.generatePdcaTaskDescription === 'function', 'generatePdcaTaskDescription exported');
 assert('U-CRT-003', typeof mod.getPdcaTaskMetadata === 'function', 'getPdcaTaskMetadata exported');
 assert('U-CRT-004', typeof mod.generateTaskGuidance === 'function', 'generateTaskGuidance exported');
-assert('U-CRT-005', typeof mod.createPdcaTaskChain === 'function', 'createPdcaTaskChain exported');
-assert('U-CRT-006', typeof mod.autoCreatePdcaTask === 'function', 'autoCreatePdcaTask exported');
 
 // --- generatePdcaTaskSubject ---
 const subj1 = mod.generatePdcaTaskSubject('plan', 'auth-feature');
@@ -94,35 +92,6 @@ assert('U-CRT-028', guide2.includes('Blocked by: plan'), 'BlockedBy included');
 
 const guide3 = mod.generateTaskGuidance('do', 'feat');
 assert('U-CRT-029', guide3.includes('Implement'), 'Do phase guidance');
-
-// --- createPdcaTaskChain ---
-const chain = mod.createPdcaTaskChain('test-feature');
-const PDCA_PHASES = phaseMod.PDCA_PHASES;
-const expectedPhases = Object.keys(PDCA_PHASES).filter(p => !['pm', 'archived'].includes(p));
-
-assert('U-CRT-030', chain.feature === 'test-feature', 'Chain feature name');
-assert('U-CRT-031', Array.isArray(chain.phases), 'Chain phases is array');
-assert('U-CRT-032', chain.phases.length === expectedPhases.length,
-  `Chain has ${expectedPhases.length} phases (${chain.phases.join(',')}) excluding pm,archived`);
-assert('U-CRT-033', chain.phases.includes('act'), 'act phase included');
-assert('U-CRT-034', !chain.phases.includes('pm'), 'pm phase excluded');
-assert('U-CRT-035', !chain.phases.includes('archived'), 'archived phase excluded');
-
-// Verify blockedBy chain
-assert('U-CRT-036', chain.tasks.plan && chain.tasks.plan.blockedBy.length === 0, 'Plan has no blockedBy');
-assert('U-CRT-037', chain.tasks.design && chain.tasks.design.blockedBy.length === 1, 'Design blocked by plan');
-assert('U-CRT-038', typeof chain.createdAt === 'string', 'Chain has createdAt timestamp');
-
-// --- autoCreatePdcaTask ---
-const auto1 = mod.autoCreatePdcaTask('my-feature', 'plan');
-assert('U-CRT-039', auto1.id.startsWith('plan-my-feature'), 'Auto task ID format');
-assert('U-CRT-040', auto1.status === 'pending', 'Auto task status is pending');
-assert('U-CRT-041', auto1.subject.includes('[Plan]'), 'Auto task subject');
-
-// Object config input
-const auto2 = mod.autoCreatePdcaTask({ feature: 'obj-feat', phase: 'design', docPath: '/docs/d.md' });
-assert('U-CRT-042', auto2.id.startsWith('design-obj-feat'), 'Object config task ID');
-assert('U-CRT-043', auto2.description.includes('/docs/d.md'), 'Object config docPath in description');
 
 console.log(`\n${'='.repeat(50)}`);
 console.log(`creator.test.js: ${passed}/${total} PASS, ${failed} FAIL`);

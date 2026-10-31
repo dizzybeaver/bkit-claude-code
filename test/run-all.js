@@ -127,7 +127,6 @@ const CATEGORIES = {
       'unit/automation-controller.test.js',
       'unit/workflow-parser.test.js',
       'unit/workflow-engine.test.js',
-      'unit/circuit-breaker.test.js',
       'unit/resume.test.js',
       'unit/lifecycle.test.js',
       'unit/full-auto-do.test.js',
@@ -332,6 +331,14 @@ const CATEGORIES = {
       'regression/qa-followups.test.js',
       // The last three Stop handlers that regexed the payload envelope.
       'regression/stop-handler-extraction.test.js',
+      // SubagentStop has no additionalContext channel (issue #162).
+      'regression/subagent-stop-handler.test.js',
+      // Release verifier check K skips on a clone without untracked .bkit state.
+      'regression/verify-full-system-skip.test.js',
+      // Skill instructions reach templates through ${CLAUDE_PLUGIN_ROOT}.
+      'regression/skill-template-paths.test.js',
+      // One writer per PDCA state value; Stop transitions only on a measured verdict.
+      'regression/pdca-state-single-writer.test.js',
     ],
     expected: 688,
   },

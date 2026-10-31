@@ -115,6 +115,12 @@ function main() {
     }
   } catch (_e) { /* fail-silent */ }
 
+  try {
+    recordGapMeasurement(hookContext, agentType);
+  } catch (e) {
+    debugLog('SubagentStop', 'Gap measurement not recorded', { error: e.message });
+  }
+
   // v2.1.10 Sprint 7c (G-J-06): Next Action suggestion on SubagentStop
   let nextActionHint = null;
   try {
@@ -132,12 +138,49 @@ function main() {
       agentName,
       agentType,
       status,
-      ...(nextActionHint ? { additionalContext: nextActionHint } : {}),
     }
   };
 
   console.log(JSON.stringify(response));
   process.exit(0);
+}
+
+/**
+ * The gap-detector is the judge of matchRate, so its report is recorded here,
+ * where it finishes, instead of relying on the working model to copy the
+ * number. status.matchRate (read by transition guards) is written from the
+ * parse, and metric M1 (read by the quality gate) mirrors it. A report that
+ * does not parse, or names a feature bkit is not tracking, records nothing.
+ */
+function recordGapMeasurement(hookContext, agentType) {
+  const { normalizeSkillName } = require('../lib/core/skill-name');
+  if (normalizeSkillName(agentType) !== 'gap-detector') return;
+
+  const { readHookText } = require('../lib/core/io');
+  const text = typeof hookContext.last_assistant_message === 'string'
+    ? hookContext.last_assistant_message
+    : (hookContext.agent_transcript_path
+      ? readHookText({ transcript_path: hookContext.agent_transcript_path })
+      : '');
+  const { parseGapReport } = require('../lib/quality/match-rate');
+  const report = parseGapReport(text);
+  if (!report) {
+    debugLog('SubagentStop', 'gap-detector report has no readable Overall Match Rate');
+    return;
+  }
+
+  const { getPdcaStatusFull, updatePdcaStatus } = require('../lib/pdca/status');
+  const entry = getPdcaStatusFull()?.features?.[report.feature];
+  if (!entry) {
+    debugLog('SubagentStop', 'gap-detector feature is not tracked', { feature: report.feature });
+    return;
+  }
+
+  // A re-measurement during qa/report updates the number without moving the phase back.
+  const phase = ['do', 'check', 'act'].includes(entry.phase) ? 'check' : entry.phase;
+  updatePdcaStatus(report.feature, phase, { matchRate: report.matchRate, measured: true });
+  require('../lib/quality/metrics-collector').syncMatchRateMetric(report.feature, report.matchRate);
+  debugLog('SubagentStop', 'gap-detector matchRate recorded', { ...report, phase });
 }
 
 main();

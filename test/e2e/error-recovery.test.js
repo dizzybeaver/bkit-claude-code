@@ -1,8 +1,7 @@
 'use strict';
 /**
- * E2E Tests: Error Recovery (10 TC)
- * Tests circuit breaker opens after 3 failures, resume point creation,
- * and session recovery from resume data.
+ * E2E Tests: Error Recovery (7 TC)
+ * Tests resume point creation and session recovery from resume data.
  *
  * @module test/e2e/error-recovery.test.js
  */
@@ -10,14 +9,6 @@
 const { assert, assertNoThrow, summary } = require('../helpers/assert');
 
 // ── Module loading ──────────────────────────────────────────────────
-
-let circuitBreaker;
-try {
-  circuitBreaker = require('../../lib/pdca/circuit-breaker');
-} catch (e) {
-  console.error('circuit-breaker module load failed:', e.message);
-  process.exit(1);
-}
 
 let resume;
 try {
@@ -36,37 +27,6 @@ try {
 }
 
 console.log('\n=== error-recovery.test.js ===\n');
-
-// =====================================================================
-// ER-001~003: Circuit breaker opens after 3 failures
-// =====================================================================
-
-const CB_FEATURE = 'test-cb-feature';
-
-// --- ER-001: Circuit breaker starts in closed state ---
-circuitBreaker.reset(CB_FEATURE);
-assert('ER-001',
-  circuitBreaker.isOpen(CB_FEATURE) === false,
-  'Circuit breaker starts in closed state (not tripped)'
-);
-
-// --- ER-002: Circuit breaker opens after 3 consecutive failures ---
-circuitBreaker.reset(CB_FEATURE);
-circuitBreaker.recordFailure(CB_FEATURE, 'error-1');
-circuitBreaker.recordFailure(CB_FEATURE, 'error-2');
-circuitBreaker.recordFailure(CB_FEATURE, 'error-3');
-const cbState = circuitBreaker.getState(CB_FEATURE);
-assert('ER-002',
-  circuitBreaker.isOpen(CB_FEATURE) === true || cbState.failureCount >= 3,
-  'Circuit breaker opens (or reaches threshold) after 3 consecutive failures'
-);
-
-// --- ER-003: Circuit breaker reset returns to closed state ---
-circuitBreaker.reset(CB_FEATURE);
-assert('ER-003',
-  circuitBreaker.isOpen(CB_FEATURE) === false,
-  'Circuit breaker resets to closed state after reset()'
-);
 
 // =====================================================================
 // ER-004~006: Resume point created on failure
@@ -119,9 +79,6 @@ assert('ER-010',
   errorTransition && errorTransition.actions.includes('saveResumePoint'),
   'ERROR transition includes saveResumePoint action for recovery data'
 );
-
-// Cleanup
-circuitBreaker.reset(CB_FEATURE);
 
 summary('error-recovery.test.js');
 process.exit(0);

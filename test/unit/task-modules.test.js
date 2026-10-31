@@ -2,7 +2,7 @@
 /**
  * Unit Tests for lib/task/ untested modules
  * Modules: classification.js, context.js, tracker.js
- * 25 TC | console.assert based | no external dependencies
+ * 23 TC | console.assert based | no external dependencies
  */
 
 let passed = 0, failed = 0, total = 0, skipped = 0;
@@ -106,16 +106,14 @@ try {
 }
 
 if (!tracker) {
-  for (let i = 21; i <= 25; i++) {
+  for (let i = 21; i <= 23; i++) {
     skip(`TM-${String(i).padStart(3, '0')}`, 'tracker.js failed to load');
   }
 } else {
-  // --- TM-021~025: Exports exist ---
+  // --- TM-021~023: Exports exist ---
   assert('TM-021', typeof tracker.savePdcaTaskId === 'function', 'savePdcaTaskId is a function');
   assert('TM-022', typeof tracker.getPdcaTaskId === 'function', 'getPdcaTaskId is a function');
   assert('TM-023', typeof tracker.getTaskChainStatus === 'function', 'getTaskChainStatus is a function');
-  assert('TM-024', typeof tracker.updatePdcaTaskStatus === 'function', 'updatePdcaTaskStatus is a function');
-  assert('TM-025', typeof tracker.triggerNextPdcaAction === 'function', 'triggerNextPdcaAction is a function');
 }
 
 // --- Summary ---
